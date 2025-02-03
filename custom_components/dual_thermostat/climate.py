@@ -73,8 +73,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     outdoor_sensor = config.get(CONF_OUTDOOR_SENSOR)
     operation_mode = config.get(CONF_OPERATION_MODE)
     temp_threshold = config.get(CONF_TEMP_THRESHOLD)
-    heating_presets = config.get(CONF_HEATING_PRESET_TEMPERATURES)
-    cooling_presets = config.get(CONF_COOLING_PRESET_TEMPERATURES)
+    heating_presets = config.get(CONF_HEATING_PRESET_TEMPERATURES) or DEFAULT_HEATING_PRESETS
+    cooling_presets = config.get(CONF_COOLING_PRESET_TEMPERATURES) or DEFAULT_COOLING_PRESETS
     outdoor_hot_threshold = config.get(CONF_OUTDOOR_HOT_THRESHOLD)
     outdoor_cold_threshold = config.get(CONF_OUTDOOR_COLD_THRESHOLD)
 
