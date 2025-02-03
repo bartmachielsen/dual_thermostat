@@ -3,13 +3,12 @@ import voluptuous as vol
 
 from homeassistant.components.climate import ClimateEntity, PLATFORM_SCHEMA
 from homeassistant.components.climate.const import (
-    HVAC_MODE_HEAT,
-    HVAC_MODE_COOL,
-    HVAC_MODE_OFF,
     SUPPORT_TARGET_TEMPERATURE,
     SUPPORT_PRESET_MODE,
 )
 import homeassistant.helpers.config_validation as cv
+
+from homeassistant.components.climate.const import HVACMode
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,7 +119,7 @@ class DualThermostat(ClimateEntity):
         # Internal state.
         self._target_temperature = None
         self._current_temperature = None
-        self._hvac_mode = HVAC_MODE_OFF  # This will be set to HVAC_MODE_HEAT or HVAC_MODE_COOL
+        self._hvac_mode = HVACMode.OFF  # This will be set to HVACMode.HEAT or HVACMode.COOL
         self._preset_mode = "comfort"  # Default preset
 
     @property
@@ -198,13 +197,13 @@ class DualThermostat(ClimateEntity):
         for preset, temp in self._heating_presets.items():
             if abs(temp - temperature) < 0.1:
                 self._preset_mode = preset
-                self._hvac_mode = HVAC_MODE_HEAT
+                self._hvac_mode = HVACMode.HEAT
                 break
 
         for preset, temp in self._cooling_presets.items():
             if abs(temp - temperature) < 0.1:
                 self._preset_mode = preset
-                self._hvac_mode = HVAC_MODE_COOL
+                self._hvac_mode = HVACMode.COOL
                 break
 
         await self._apply_temperature()
@@ -240,26 +239,26 @@ class DualThermostat(ClimateEntity):
             if outdoor_temp is not None:
                 # If it's very hot outside, choose cooling; if very cold, choose heating.
                 if outdoor_temp >= self._outdoor_hot_threshold:
-                    self._hvac_mode = HVAC_MODE_COOL
+                    self._hvac_mode = HVACMode.COOL
                     self._target_temperature = self._cooling_presets.get(preset_mode, self._target_temperature)
                 elif outdoor_temp <= self._outdoor_cold_threshold:
-                    self._hvac_mode = HVAC_MODE_HEAT
+                    self._hvac_mode = HVACMode.HEAT
                     self._target_temperature = self._heating_presets.get(preset_mode, self._target_temperature)
                 else:
                     # In between, default to heating (adjustable as needed).
-                    self._hvac_mode = HVAC_MODE_HEAT
+                    self._hvac_mode = HVACMode.HEAT
                     self._target_temperature = self._heating_presets.get(preset_mode, self._target_temperature)
             else:
                 # Fall back to heating if outdoor sensor reading fails.
-                self._hvac_mode = HVAC_MODE_HEAT
+                self._hvac_mode = HVACMode.HEAT
                 self._target_temperature = self._heating_presets.get(preset_mode, self._target_temperature)
         else:
             # For non-"comfort" presets, check which mapping contains the preset.
             if preset_mode in self._cooling_presets:
-                self._hvac_mode = HVAC_MODE_COOL
+                self._hvac_mode = HVACMode.COOL
                 self._target_temperature = self._cooling_presets[preset_mode]
             elif preset_mode in self._heating_presets:
-                self._hvac_mode = HVAC_MODE_HEAT
+                self._hvac_mode = HVACMode.HEAT
                 self._target_temperature = self._heating_presets[preset_mode]
 
         _LOGGER.debug("Preset mode set to %s; HVAC mode: %s; Target temp: %s",
@@ -285,7 +284,7 @@ class DualThermostat(ClimateEntity):
             return
 
         # Calculate the difference between indoor temperature and target.
-        if self._hvac_mode==HVAC_MODE_COOL:
+        if self._hvac_mode==HVACMode.COOL:
             diff = self._current_temperature - self._target_temperature
         else:
             diff = self._target_temperature - self._current_temperature
@@ -301,11 +300,11 @@ class DualThermostat(ClimateEntity):
                 if diff > (self._temp_threshold + 1.0):
                     await self._set_effective_secondary(self._hvac_mode)
                 else:
-                    await self._set_effective_secondary(HVAC_MODE_OFF)
+                    await self._set_effective_secondary(HVACMode.OFF)
             elif self._operation_mode=="constant_on_demand":
                 await self._set_effective_secondary(self._hvac_mode)
         else:
-            await self._set_effective_secondary(HVAC_MODE_OFF)
+            await self._set_effective_secondary(HVACMode.OFF)
 
         # Always update the effective main device with the target temperature.
         await self._set_effective_main_temperature(self._target_temperature)
@@ -314,9 +313,9 @@ class DualThermostat(ClimateEntity):
         desired_mode = self._evaluate_mode_sync()
         if desired_mode:
             if desired_mode=="cool":
-                self._hvac_mode = HVAC_MODE_COOL
+                self._hvac_mode = HVACMode.COOL
             elif desired_mode=="heat":
-                self._hvac_mode = HVAC_MODE_HEAT
+                self._hvac_mode = HVACMode.HEAT
             await self._set_effective_main_hvac_mode(self._hvac_mode)
             await self._set_effective_secondary(self._hvac_mode)
 
