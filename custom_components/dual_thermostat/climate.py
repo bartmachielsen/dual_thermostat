@@ -5,6 +5,7 @@ from homeassistant.components.climate import ClimateEntity, PLATFORM_SCHEMA
 import homeassistant.helpers.config_validation as cv
 
 from homeassistant.components.climate.const import HVACMode, ClimateEntityFeature
+from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.template import Template
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,7 +76,6 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     temp_threshold = config.get(CONF_TEMP_THRESHOLD)
     heating_presets = config.get(CONF_HEATING_PRESET_TEMPERATURES)
     cooling_presets = config.get(CONF_COOLING_PRESET_TEMPERATURES)
-    mode_sync_template = config.get(CONF_MODE_SYNC_TEMPLATE)
     outdoor_hot_threshold = config.get(CONF_OUTDOOR_HOT_THRESHOLD)
     outdoor_cold_threshold = config.get(CONF_OUTDOOR_COLD_THRESHOLD)
 
@@ -104,6 +104,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
 class DualThermostat(ClimateEntity):
     """Representation of a dual thermostat that automatically chooses between heating and cooling."""
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
 
     def __init__(self, hass, main_climate, secondary_climate, sensor, outdoor_sensor,
                  operation_mode, temp_threshold, heating_presets, cooling_presets,
