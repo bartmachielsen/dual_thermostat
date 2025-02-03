@@ -2,13 +2,9 @@ import logging
 import voluptuous as vol
 
 from homeassistant.components.climate import ClimateEntity, PLATFORM_SCHEMA
-from homeassistant.components.climate.const import (
-    SUPPORT_TARGET_TEMPERATURE,
-    SUPPORT_PRESET_MODE,
-)
 import homeassistant.helpers.config_validation as cv
 
-from homeassistant.components.climate.const import HVACMode
+from homeassistant.components.climate.const import HVACMode, ClimateEntityFeature
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -130,7 +126,7 @@ class DualThermostat(ClimateEntity):
     @property
     def supported_features(self):
         """Return the supported features."""
-        return SUPPORT_TARGET_TEMPERATURE | SUPPORT_PRESET_MODE
+        return ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
 
     @property
     def hvac_mode(self):
