@@ -3,20 +3,23 @@ import voluptuous as vol
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant import config_entries
+from homeassistant.helpers.selector import (
+    selector,
+    EntitySelectorConfig,
+)
 
-# Import the domain from your integration.
+# Import your domain.
 DOMAIN = "dual_thermostat"
 
 _LOGGER = logging.getLogger(__name__)
 
-# Define configuration keys (these match what the integration expects)
+# Configuration keys.
 CONF_MAIN_CLIMATE = "main_climate"
 CONF_SECONDARY_CLIMATE = "secondary_climate"
 CONF_SENSOR = "sensor"
 CONF_OUTDOOR_SENSOR = "outdoor_sensor"
 CONF_OPERATION_MODE = "operation_mode"
 CONF_TEMP_THRESHOLD = "temp_threshold"
-# Instead of a single dictionary for presets, we use individual fields.
 CONF_HEATING_COMFORT_TEMPERATURE = "heating_comfort_temperature"
 CONF_HEATING_ECO_TEMPERATURE = "heating_eco_temperature"
 CONF_COOLING_COMFORT_TEMPERATURE = "cooling_comfort_temperature"
@@ -27,12 +30,28 @@ CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"
 
 OPERATION_MODES = ["always", "on_demand", "constant_on_demand"]
 
-# Schema for the initial configuration step.
+# Use entity selectors for climate entities and sensors.
 DATA_SCHEMA = vol.Schema({
-    vol.Required(CONF_MAIN_CLIMATE): cv.string,
-    vol.Required(CONF_SECONDARY_CLIMATE): cv.string,
-    vol.Required(CONF_SENSOR): cv.string,
-    vol.Optional(CONF_OUTDOOR_SENSOR): cv.string,
+    vol.Required(CONF_MAIN_CLIMATE): selector({
+        "entity": {
+            "domain": "climate",
+        }
+    }),
+    vol.Required(CONF_SECONDARY_CLIMATE): selector({
+        "entity": {
+            "domain": "climate",
+        }
+    }),
+    vol.Required(CONF_SENSOR): selector({
+        "entity": {
+            "domain": ["sensor"],
+        }
+    }),
+    vol.Optional(CONF_OUTDOOR_SENSOR): selector({
+        "entity": {
+            "domain": ["sensor"],
+        }
+    }),
     vol.Optional(CONF_OPERATION_MODE, default="on_demand"): vol.In(OPERATION_MODES),
     vol.Optional(CONF_TEMP_THRESHOLD, default=1.5): vol.Coerce(float),
     vol.Optional(CONF_HEATING_COMFORT_TEMPERATURE, default=21): vol.Coerce(float),
@@ -54,7 +73,7 @@ class DualThermostatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         errors = {}
         if user_input is not None:
-            # Here you could add additional validation logic if needed.
+            # Additional validation can be added here if needed.
             return self.async_create_entry(title="Dual Thermostat", data=user_input)
 
         return self.async_show_form(
@@ -62,7 +81,7 @@ class DualThermostatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_import(self, user_input):
-        """Import configuration from YAML (if needed)."""
+        """Import configuration from YAML if present."""
         return await self.async_step_user(user_input)
 
 
@@ -82,19 +101,27 @@ class DualThermostatOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_MAIN_CLIMATE,
                 default=self.config_entry.data.get(CONF_MAIN_CLIMATE)
-            ): cv.string,
+            ): selector({
+                "entity": {"domain": "climate"}
+            }),
             vol.Optional(
                 CONF_SECONDARY_CLIMATE,
                 default=self.config_entry.data.get(CONF_SECONDARY_CLIMATE)
-            ): cv.string,
+            ): selector({
+                "entity": {"domain": "climate"}
+            }),
             vol.Optional(
                 CONF_SENSOR,
                 default=self.config_entry.data.get(CONF_SENSOR)
-            ): cv.string,
+            ): selector({
+                "entity": {"domain": ["sensor"]}
+            }),
             vol.Optional(
                 CONF_OUTDOOR_SENSOR,
                 default=self.config_entry.data.get(CONF_OUTDOOR_SENSOR, "")
-            ): cv.string,
+            ): selector({
+                "entity": {"domain": ["sensor"]}
+            }),
             vol.Optional(
                 CONF_OPERATION_MODE,
                 default=self.config_entry.data.get(CONF_OPERATION_MODE, "on_demand")
