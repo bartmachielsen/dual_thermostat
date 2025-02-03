@@ -13,6 +13,11 @@ jobs:
         with:
           bump_version_scheme: minor
 
+      - name: HACS validation
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
+
 permissions:
   contents: write
   pull-requests: read
