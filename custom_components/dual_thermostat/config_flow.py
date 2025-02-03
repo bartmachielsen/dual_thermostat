@@ -18,7 +18,6 @@ CONF_MAIN_CLIMATE = "main_climate"
 CONF_SECONDARY_CLIMATE = "secondary_climate"
 CONF_SENSOR = "sensor"
 CONF_OUTDOOR_SENSOR = "outdoor_sensor"
-CONF_OPERATION_MODE = "operation_mode"
 CONF_TEMP_THRESHOLD = "temp_threshold"
 CONF_HEATING_COMFORT_TEMPERATURE = "heating_comfort_temperature"
 CONF_HEATING_ECO_TEMPERATURE = "heating_eco_temperature"
@@ -27,8 +26,6 @@ CONF_COOLING_ECO_TEMPERATURE = "cooling_eco_temperature"
 CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"
 CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"
 CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"
-
-OPERATION_MODES = ["always", "on_demand", "constant_on_demand"]
 
 # Use entity selectors for climate entities and sensors.
 DATA_SCHEMA = vol.Schema({
@@ -52,7 +49,6 @@ DATA_SCHEMA = vol.Schema({
             "domain": ["sensor"],
         }
     }),
-    vol.Optional(CONF_OPERATION_MODE, default="on_demand"): vol.In(OPERATION_MODES),
     vol.Optional(CONF_TEMP_THRESHOLD, default=1.5): vol.Coerce(float),
     vol.Optional(CONF_HEATING_COMFORT_TEMPERATURE, default=21): vol.Coerce(float),
     vol.Optional(CONF_HEATING_ECO_TEMPERATURE, default=17): vol.Coerce(float),
@@ -122,10 +118,6 @@ class DualThermostatOptionsFlow(config_entries.OptionsFlow):
             ): selector({
                 "entity": {"domain": ["sensor"]}
             }),
-            vol.Optional(
-                CONF_OPERATION_MODE,
-                default=self.config_entry.data.get(CONF_OPERATION_MODE, "on_demand")
-            ): vol.In(OPERATION_MODES),
             vol.Optional(
                 CONF_TEMP_THRESHOLD,
                 default=self.config_entry.data.get(CONF_TEMP_THRESHOLD, 1.5)
