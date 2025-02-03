@@ -1,0 +1,2 @@
+# Dual Thermostat
+- Home assistant
