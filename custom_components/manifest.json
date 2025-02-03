@@ -1,0 +1,10 @@
+{
+  "domain": "dual_thermostat",
+  "name": "Dual Thermostat",
+  "version": "0.0.1",
+  "documentation": "https://github.com/bartmachielsen/dual_thermostat",
+  "requirements": [],
+  "dependencies": ["climate"],
+  "codeowners": ["@bartmachielsen"],
+  "config_flow": true
+}
