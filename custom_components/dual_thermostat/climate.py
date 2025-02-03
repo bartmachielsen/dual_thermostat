@@ -56,6 +56,14 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up the Dual Thermostat platform from a config entry."""
+    # Use the config entry's data as the configuration.
+    config = config_entry.data
+    await async_setup_platform(hass, config, async_add_entities)
+    return True
+
+
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Set up the Dual Thermostat platform."""
     main_climate = config.get(CONF_MAIN_CLIMATE)
