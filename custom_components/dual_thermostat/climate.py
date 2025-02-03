@@ -5,6 +5,7 @@ from homeassistant.components.climate import ClimateEntity, PLATFORM_SCHEMA
 import homeassistant.helpers.config_validation as cv
 
 from homeassistant.components.climate.const import HVACMode, ClimateEntityFeature
+from homeassistant.helpers.template import Template
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,9 +79,10 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     outdoor_hot_threshold = config.get(CONF_OUTDOOR_HOT_THRESHOLD)
     outdoor_cold_threshold = config.get(CONF_OUTDOOR_COLD_THRESHOLD)
 
-    if mode_sync_template is not None:
-        # Pre-render the template.
-        mode_sync_template.hass = hass
+    mode_sync_template = config.get(CONF_MODE_SYNC_TEMPLATE)
+    if mode_sync_template:
+        # Convert the string into a Template object.
+        mode_sync_template = Template(mode_sync_template, hass)
 
     async_add_entities([
         DualThermostat(
