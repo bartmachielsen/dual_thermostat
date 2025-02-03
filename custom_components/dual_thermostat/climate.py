@@ -60,7 +60,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the Dual Thermostat platform from a config entry."""
-    # Use the config entry's data as the configuration.
     config = config_entry.data
     await async_setup_platform(hass, config, async_add_entities)
     return True
@@ -81,7 +80,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
     mode_sync_template = config.get(CONF_MODE_SYNC_TEMPLATE)
     if mode_sync_template:
-        # Convert the string into a Template object.
+        # Convert the template string into a Template object.
         mode_sync_template = Template(mode_sync_template, hass)
 
     async_add_entities([
@@ -104,7 +103,10 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
 class DualThermostat(ClimateEntity):
     """Representation of a dual thermostat that automatically chooses between heating and cooling."""
+    # Use the new attribute naming conventions.
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
 
     def __init__(self, hass, main_climate, secondary_climate, sensor, outdoor_sensor,
                  operation_mode, temp_threshold, heating_presets, cooling_presets,
@@ -123,11 +125,11 @@ class DualThermostat(ClimateEntity):
         self._outdoor_hot_threshold = outdoor_hot_threshold
         self._outdoor_cold_threshold = outdoor_cold_threshold
 
-        # Internal state.
-        self._target_temperature = None
-        self._current_temperature = None
-        self._hvac_mode = HVACMode.OFF  # This will be set to HVACMode.HEAT or HVACMode.COOL
-        self._preset_mode = "comfort"  # Default preset
+        # Use Home Assistant’s attribute names so that state reporting works out of the box.
+        self._attr_target_temperature = None
+        self._attr_current_temperature = None
+        self._attr_hvac_mode = HVACMode.OFF  # Start off.
+        self._attr_preset_mode = "comfort"  # Default preset
 
     @property
     def name(self):
@@ -135,41 +137,29 @@ class DualThermostat(ClimateEntity):
         return f"Dual Thermostat ({self._main_climate} + {self._secondary_climate})"
 
     @property
-    def supported_features(self):
-        """Return the supported features."""
-        return ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
-
-    @property
-    def hvac_mode(self):
-        """Return the current HVAC mode."""
-        return self._hvac_mode
-
-    @property
     def current_temperature(self):
         """Return the current indoor temperature from the primary sensor."""
-        return self._current_temperature
+        return self._attr_current_temperature
 
     @property
     def target_temperature(self):
         """Return the target temperature."""
-        return self._target_temperature
+        return self._attr_target_temperature
 
     @property
     def preset_mode(self):
         """Return the current preset mode."""
-        return self._preset_mode
+        return self._attr_preset_mode
 
     @property
     def preset_modes(self):
         """Return a list of available preset modes.
-
-        (We assume that the same preset names, e.g. 'comfort' and 'eco', apply for both heating and cooling.)
+        (We assume that the same preset names apply for both heating and cooling.)
         """
         return list(self._heating_presets.keys())
 
     def _evaluate_mode_sync(self):
         """Evaluate the mode_sync_template, if provided, to force both devices to the same mode.
-
         The template should return either 'heat' or 'cool'.
         """
         if self._mode_sync_template is not None:
@@ -184,7 +174,6 @@ class DualThermostat(ClimateEntity):
     @property
     def effective_main_device(self):
         """Return the entity_id of the effective main device."""
-        # (Role swapping could be added here if needed.)
         return self._main_climate
 
     @property
@@ -198,40 +187,41 @@ class DualThermostat(ClimateEntity):
         if temperature is None:
             return
 
-        self._target_temperature = temperature
+        self._attr_target_temperature = temperature
 
         # Try to match one of our presets.
         for preset, temp in self._heating_presets.items():
             if abs(temp - temperature) < 0.1:
-                self._preset_mode = preset
-                self._hvac_mode = HVACMode.HEAT
+                self._attr_preset_mode = preset
+                self._attr_hvac_mode = HVACMode.HEAT
                 break
 
         for preset, temp in self._cooling_presets.items():
             if abs(temp - temperature) < 0.1:
-                self._preset_mode = preset
-                self._hvac_mode = HVACMode.COOL
+                self._attr_preset_mode = preset
+                self._attr_hvac_mode = HVACMode.COOL
                 break
 
         await self._apply_temperature()
+        self.async_write_ha_state()
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set a new HVAC mode."""
-        self._hvac_mode = hvac_mode
+        self._attr_hvac_mode = hvac_mode
         await self._apply_temperature()
+        self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode):
         """Set a new preset mode and update the target temperature accordingly.
-
         For the 'comfort' preset, the outdoor sensor is used to decide between heat and cool.
         """
         if preset_mode not in self._heating_presets:
             _LOGGER.error("Preset mode %s not recognized", preset_mode)
             return
 
-        self._preset_mode = preset_mode
+        self._attr_preset_mode = preset_mode
 
-        if preset_mode=="comfort" and self._outdoor_sensor is not None:
+        if preset_mode == "comfort" and self._outdoor_sensor is not None:
             outdoor_state = self.hass.states.get(self._outdoor_sensor)
             if outdoor_state is not None:
                 try:
@@ -246,31 +236,32 @@ class DualThermostat(ClimateEntity):
             if outdoor_temp is not None:
                 # If it's very hot outside, choose cooling; if very cold, choose heating.
                 if outdoor_temp >= self._outdoor_hot_threshold:
-                    self._hvac_mode = HVACMode.COOL
-                    self._target_temperature = self._cooling_presets.get(preset_mode, self._target_temperature)
+                    self._attr_hvac_mode = HVACMode.COOL
+                    self._attr_target_temperature = self._cooling_presets.get(preset_mode, self._attr_target_temperature)
                 elif outdoor_temp <= self._outdoor_cold_threshold:
-                    self._hvac_mode = HVACMode.HEAT
-                    self._target_temperature = self._heating_presets.get(preset_mode, self._target_temperature)
+                    self._attr_hvac_mode = HVACMode.HEAT
+                    self._attr_target_temperature = self._heating_presets.get(preset_mode, self._attr_target_temperature)
                 else:
                     # In between, default to heating (adjustable as needed).
-                    self._hvac_mode = HVACMode.HEAT
-                    self._target_temperature = self._heating_presets.get(preset_mode, self._target_temperature)
+                    self._attr_hvac_mode = HVACMode.HEAT
+                    self._attr_target_temperature = self._heating_presets.get(preset_mode, self._attr_target_temperature)
             else:
                 # Fall back to heating if outdoor sensor reading fails.
-                self._hvac_mode = HVACMode.HEAT
-                self._target_temperature = self._heating_presets.get(preset_mode, self._target_temperature)
+                self._attr_hvac_mode = HVACMode.HEAT
+                self._attr_target_temperature = self._heating_presets.get(preset_mode, self._attr_target_temperature)
         else:
             # For non-"comfort" presets, check which mapping contains the preset.
             if preset_mode in self._cooling_presets:
-                self._hvac_mode = HVACMode.COOL
-                self._target_temperature = self._cooling_presets[preset_mode]
+                self._attr_hvac_mode = HVACMode.COOL
+                self._attr_target_temperature = self._cooling_presets[preset_mode]
             elif preset_mode in self._heating_presets:
-                self._hvac_mode = HVACMode.HEAT
-                self._target_temperature = self._heating_presets[preset_mode]
+                self._attr_hvac_mode = HVACMode.HEAT
+                self._attr_target_temperature = self._heating_presets[preset_mode]
 
         _LOGGER.debug("Preset mode set to %s; HVAC mode: %s; Target temp: %s",
-            preset_mode, self._hvac_mode, self._target_temperature)
+                      preset_mode, self._attr_hvac_mode, self._attr_target_temperature)
         await self._apply_temperature()
+        self.async_write_ha_state()
 
     async def _apply_temperature(self):
         """
@@ -285,46 +276,43 @@ class DualThermostat(ClimateEntity):
             return
 
         try:
-            self._current_temperature = float(sensor_state.state)
+            self._attr_current_temperature = float(sensor_state.state)
         except Exception as e:
             _LOGGER.error("Error reading state from sensor %s: %s", self._sensor, e)
             return
 
         # Calculate the difference between indoor temperature and target.
-        if self._hvac_mode==HVACMode.COOL:
-            diff = self._current_temperature - self._target_temperature
+        if self._attr_hvac_mode == HVACMode.COOL:
+            diff = self._attr_current_temperature - self._attr_target_temperature
         else:
-            diff = self._target_temperature - self._current_temperature
+            diff = self._attr_target_temperature - self._attr_current_temperature
 
         _LOGGER.debug("Indoor sensor current temp: %s, Target: %s, Diff: %s, Mode: %s",
-            self._current_temperature, self._target_temperature, diff, self._hvac_mode)
+                      self._attr_current_temperature, self._attr_target_temperature, diff, self._attr_hvac_mode)
 
         # Decide whether to boost with the secondary device.
         if diff > self._temp_threshold:
-            if self._operation_mode=="always":
-                await self._set_effective_secondary(self._hvac_mode)
-            elif self._operation_mode=="on_demand":
+            if self._operation_mode == "always":
+                await self._set_effective_secondary(self._attr_hvac_mode)
+            elif self._operation_mode == "on_demand":
                 if diff > (self._temp_threshold + 1.0):
-                    await self._set_effective_secondary(self._hvac_mode)
+                    await self._set_effective_secondary(self._attr_hvac_mode)
                 else:
                     await self._set_effective_secondary(HVACMode.OFF)
-            elif self._operation_mode=="constant_on_demand":
-                await self._set_effective_secondary(self._hvac_mode)
+            elif self._operation_mode == "constant_on_demand":
+                await self._set_effective_secondary(self._attr_hvac_mode)
         else:
             await self._set_effective_secondary(HVACMode.OFF)
 
         # Always update the effective main device with the target temperature.
-        await self._set_effective_main_temperature(self._target_temperature)
+        await self._set_effective_main_temperature(self._attr_target_temperature)
 
         # If a mode sync template is provided, enforce the same HVAC mode on both devices.
         desired_mode = self._evaluate_mode_sync()
         if desired_mode:
-            if desired_mode=="cool":
-                self._hvac_mode = HVACMode.COOL
-            elif desired_mode=="heat":
-                self._hvac_mode = HVACMode.HEAT
-            await self._set_effective_main_hvac_mode(self._hvac_mode)
-            await self._set_effective_secondary(self._hvac_mode)
+            self._attr_hvac_mode = HVACMode.COOL if desired_mode == "cool" else HVACMode.HEAT
+            await self._set_effective_main_hvac_mode(self._attr_hvac_mode)
+            await self._set_effective_secondary(self._attr_hvac_mode)
 
     async def _set_effective_main_temperature(self, temperature):
         """Call the climate service to set the effective main device's temperature."""
@@ -332,8 +320,7 @@ class DualThermostat(ClimateEntity):
             "entity_id": self.effective_main_device,
             "temperature": temperature,
         }
-        _LOGGER.debug("Setting effective main climate %s to %s",
-            self.effective_main_device, temperature)
+        _LOGGER.debug("Setting effective main climate %s to %s", self.effective_main_device, temperature)
         await self.hass.services.async_call("climate", "set_temperature", service_data)
 
     async def _set_effective_main_hvac_mode(self, hvac_mode):
@@ -342,8 +329,7 @@ class DualThermostat(ClimateEntity):
             "entity_id": self.effective_main_device,
             "hvac_mode": hvac_mode,
         }
-        _LOGGER.debug("Setting effective main climate %s to hvac_mode %s",
-            self.effective_main_device, hvac_mode)
+        _LOGGER.debug("Setting effective main climate %s to hvac_mode %s", self.effective_main_device, hvac_mode)
         await self.hass.services.async_call("climate", "set_hvac_mode", service_data)
 
     async def _set_effective_secondary(self, hvac_mode):
@@ -352,8 +338,7 @@ class DualThermostat(ClimateEntity):
             "entity_id": self.effective_secondary_device,
             "hvac_mode": hvac_mode,
         }
-        _LOGGER.debug("Setting effective secondary climate %s to hvac_mode %s",
-            self.effective_secondary_device, hvac_mode)
+        _LOGGER.debug("Setting effective secondary climate %s to hvac_mode %s", self.effective_secondary_device, hvac_mode)
         await self.hass.services.async_call("climate", "set_hvac_mode", service_data)
 
     async def async_update(self):
@@ -361,6 +346,6 @@ class DualThermostat(ClimateEntity):
         sensor_state = self.hass.states.get(self._sensor)
         if sensor_state is not None:
             try:
-                self._current_temperature = float(sensor_state.state)
+                self._attr_current_temperature = float(sensor_state.state)
             except Exception as e:
                 _LOGGER.error("Error updating current_temperature from sensor %s: %s", self._sensor, e)
