@@ -34,24 +34,16 @@ CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
 # Default values.
 DEFAULT_TEMP_THRESHOLD = 1.0
 DEFAULT_HEATING_PRESETS = {
-    "None": None,
-    "Eco": 18,
-    "Away": 17,
-    "Boost": 23,
+    "Eco": 15,
+    "Away": 15,
     "Comfort": 21,
-    "Home": 22,
-    "Sleep": 19,
-    "Activity": 20,
+    "Home": 18,
 }
 DEFAULT_COOLING_PRESETS = {
-    "None": None,
-    "Eco": 26,
-    "Away": 27,
-    "Boost": 23,
-    "Comfort": 25,
-    "Home": 24,
-    "Sleep": 26,
-    "Activity": 25,
+    "Eco": None,
+    "Away": None,
+    "Comfort": 24,
+    "Home": 16,
 }
 DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["Comfort"]
 DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["Comfort"]
@@ -141,7 +133,7 @@ class DualThermostat(ClimateEntity):
         self._attr_target_temperature = None
         self._attr_current_temperature = None
         self._attr_hvac_mode = HVACMode.AUTO
-        self._attr_preset_mode = "None"
+        self._attr_preset_mode = "Eco"
         self._update_unsub = None  # Will hold our periodic update unsubscribe callback
 
     @property
@@ -167,7 +159,8 @@ class DualThermostat(ClimateEntity):
     @property
     def preset_modes(self):
         """Return a list of available preset modes."""
-        return ["None", "Eco", "Away", "Boost", "Comfort", "Home", "Sleep", "Activity"]
+        # Return the list of preset names.
+        return list({**self._heating_presets, **self._cooling_presets}.keys())
 
     def _evaluate_mode_sync(self):
         """If a mode_sync_template is provided, evaluate it to force both devices to the same mode.
@@ -211,21 +204,11 @@ class DualThermostat(ClimateEntity):
             _LOGGER.error("Preset mode %s not recognized", preset_mode)
             return
 
-        # Handle 'None' preset as a special case to disable thermostat control.
-        if preset_mode=="None":
-            self._attr_preset_mode = preset_mode
-            self._attr_target_temperature = None
-            _LOGGER.debug("Preset mode set to None; disabling thermostat control")
-            await self._set_effective_main_hvac_mode(HVACMode.OFF)
-            await self._set_effective_secondary(HVACMode.OFF)
-            self.async_write_ha_state()
-            return
-
         self._attr_preset_mode = preset_mode
 
         sensor_state = self.hass.states.get(self._sensor)
         current_temp = None
-        if sensor_state is not None:
+        if sensor_state is not None and sensor_state.state not in ["unknown", "unavailable"]:
             try:
                 current_temp = float(sensor_state.state)
             except Exception as e:
@@ -257,8 +240,8 @@ class DualThermostat(ClimateEntity):
 
     async def _apply_temperature(self):
         sensor_state = self.hass.states.get(self._sensor)
-        if sensor_state is None:
-            _LOGGER.error("Sensor %s not found", self._sensor)
+        if sensor_state is None or sensor_state.state in ["unknown", "unavailable"]:
+            _LOGGER.error("Sensor %s not found or state is unknown/unavailable", self._sensor)
             return
 
         try:
@@ -285,23 +268,24 @@ class DualThermostat(ClimateEntity):
             # Only engage cooling if outdoor conditions are sufficiently hot.
             if self._outdoor_sensor:
                 outdoor_state = self.hass.states.get(self._outdoor_sensor)
-                if outdoor_state:
+                if outdoor_state is not None and outdoor_state.state not in ["unknown", "unavailable"]:
                     try:
                         outdoor_temp = float(outdoor_state.state)
                     except Exception as e:
                         _LOGGER.error("Error reading outdoor sensor %s: %s", self._outdoor_sensor, e)
                         outdoor_temp = None
-                    if outdoor_temp is not None and outdoor_temp >= self._outdoor_hot_threshold:
-                        effective_mode = HVACMode.COOL
-                    else:
-                        _LOGGER.debug(
-                            "Cooling suppressed: outdoor temperature (%s) below threshold (%s)",
-                            outdoor_temp, self._outdoor_hot_threshold
-                        )
-                        effective_mode = HVACMode.OFF
                 else:
-                    _LOGGER.debug("Outdoor sensor %s not found, defaulting to COOL", self._outdoor_sensor)
+                    _LOGGER.error("Outdoor sensor %s not found or state is unknown/unavailable", self._outdoor_sensor)
+                    outdoor_temp = None
+
+                if outdoor_temp is not None and outdoor_temp >= self._outdoor_hot_threshold:
                     effective_mode = HVACMode.COOL
+                else:
+                    _LOGGER.debug(
+                        "Cooling suppressed: outdoor temperature (%s) below threshold (%s)",
+                        outdoor_temp, self._outdoor_hot_threshold
+                    )
+                    effective_mode = HVACMode.OFF
             else:
                 effective_mode = HVACMode.COOL
         else:
@@ -312,7 +296,7 @@ class DualThermostat(ClimateEntity):
             diff = 0
 
         # Prevent rapid switching between heating and cooling.
-        if effective_mode!=HVACMode.OFF and effective_mode!=self._last_mode:
+        if effective_mode != HVACMode.OFF and effective_mode != self._last_mode:
             if now_time - self._last_switch_time < self._min_runtime:
                 _LOGGER.debug(
                     "Mode switch from %s to %s suppressed due to minimum runtime requirement",
@@ -325,12 +309,17 @@ class DualThermostat(ClimateEntity):
             self._attr_current_temperature, self._attr_target_temperature, diff, effective_mode
         )
 
-        # Update the primary and secondary climate devices.
+        # Update the primary device: first set the HVAC mode...
         await self._set_effective_main_hvac_mode(effective_mode)
+        # ...then, if not off, set the temperature.
+        if effective_mode != HVACMode.OFF and self._attr_target_temperature is not None:
+            await self._set_effective_main_temperature(self._attr_target_temperature)
+
+        # Update the secondary device.
         await self._set_effective_secondary(effective_mode if diff > self._temp_threshold else HVACMode.OFF)
 
         # If not off, update the last switch time and mode.
-        if effective_mode!=HVACMode.OFF:
+        if effective_mode != HVACMode.OFF:
             self._last_switch_time = now_time
             self._last_mode = effective_mode
 
@@ -357,7 +346,7 @@ class DualThermostat(ClimateEntity):
 
         When turning on the secondary device, also update its target temperature to match the mode.
         """
-        if hvac_mode!=HVACMode.OFF and self._attr_target_temperature is not None:
+        if hvac_mode != HVACMode.OFF and self._attr_target_temperature is not None:
             service_data_temp = {
                 "entity_id": self.effective_secondary_device,
                 "temperature": self._attr_target_temperature,
@@ -380,11 +369,13 @@ class DualThermostat(ClimateEntity):
     async def async_update(self):
         """Fetch new state data (update the indoor sensor reading)."""
         sensor_state = self.hass.states.get(self._sensor)
-        if sensor_state is not None:
+        if sensor_state is not None and sensor_state.state not in ["unknown", "unavailable"]:
             try:
                 self._attr_current_temperature = float(sensor_state.state)
             except Exception as e:
                 _LOGGER.error("Error updating sensor %s: %s", self._sensor, e)
+        else:
+            _LOGGER.error("Sensor %s state is unknown or unavailable during update", self._sensor)
 
     async def async_added_to_hass(self):
         """Set up a periodic update to keep the temperature in check."""
