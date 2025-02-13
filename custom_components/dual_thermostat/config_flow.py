@@ -14,13 +14,8 @@ CONF_MAIN_CLIMATE = "main_climate"
 CONF_SECONDARY_CLIMATE = "secondary_climate"
 CONF_SENSOR = "sensor"
 CONF_OUTDOOR_SENSOR = "outdoor_sensor"
-CONF_TEMP_THRESHOLD = "temp_threshold"
-
-# These keys are used for user input and then consolidated.
-CONF_HEATING_COMFORT_TEMPERATURE = "heating_comfort_temperature"
-CONF_HEATING_ECO_TEMPERATURE = "heating_eco_temperature"
-CONF_COOLING_COMFORT_TEMPERATURE = "cooling_comfort_temperature"
-CONF_COOLING_ECO_TEMPERATURE = "cooling_eco_temperature"
+CONF_TEMP_THRESHOLD_PRIMARY = "temp_threshold_primary"
+CONF_TEMP_THRESHOLD_SECONDARY = "temp_threshold_secondary"
 
 CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"
 CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"
@@ -33,11 +28,8 @@ DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_SECONDARY_CLIMATE): selector({"entity": {"domain": "climate"}}),
     vol.Required(CONF_SENSOR): selector({"entity": {"domain": ["sensor"]}}),
     vol.Optional(CONF_OUTDOOR_SENSOR): selector({"entity": {"domain": ["sensor"]}}),
-    vol.Optional(CONF_TEMP_THRESHOLD, default=1.5): vol.Coerce(float),
-    vol.Optional(CONF_HEATING_COMFORT_TEMPERATURE, default=21): vol.Coerce(float),
-    vol.Optional(CONF_HEATING_ECO_TEMPERATURE, default=17): vol.Coerce(float),
-    vol.Optional(CONF_COOLING_COMFORT_TEMPERATURE, default=25): vol.Coerce(float),
-    vol.Optional(CONF_COOLING_ECO_TEMPERATURE, default=28): vol.Coerce(float),
+    vol.Optional(CONF_TEMP_THRESHOLD_PRIMARY, default=1): vol.Coerce(float),
+    vol.Optional(CONF_TEMP_THRESHOLD_SECONDARY, default=3): vol.Coerce(float),
     vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=25.0): vol.Coerce(float),
     vol.Optional(CONF_OUTDOOR_COLD_THRESHOLD, default=10.0): vol.Coerce(float),
     vol.Optional(CONF_MODE_SYNC_TEMPLATE, default=""): str,
@@ -95,8 +87,12 @@ class DualThermostatOptionsFlow(config_entries.OptionsFlow):
                 default=self.config_entry.data.get(CONF_OUTDOOR_SENSOR, "")
             ): selector({"entity": {"domain": ["sensor"]}}),
             vol.Optional(
-                CONF_TEMP_THRESHOLD,
-                default=self.config_entry.data.get(CONF_TEMP_THRESHOLD, 1.5)
+                CONF_TEMP_THRESHOLD_PRIMARY,
+                default=self.config_entry.data.get(CONF_TEMP_THRESHOLD_SECONDARY)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_TEMP_THRESHOLD_SECONDARY,
+                default=self.config_entry.data.get(CONF_TEMP_THRESHOLD_SECONDARY)
             ): vol.Coerce(float),
             vol.Optional(
                 CONF_OUTDOOR_HOT_THRESHOLD,
