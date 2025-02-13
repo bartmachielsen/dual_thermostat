@@ -26,13 +26,16 @@ CONF_OUTDOOR_SENSOR = "outdoor_sensor"  # (Optional) Outdoor sensor.
 CONF_MIN_RUNTIME = "min_runtime_seconds"  # Minimum runtime before turning off
 
 # Configuration keys for controlling behavior.
-CONF_TEMP_THRESHOLD = "temp_threshold"  # Degrees of difference before boosting.
+# (Now using separate thresholds for primary and secondary devices)
+CONF_TEMP_THRESHOLD_PRIMARY = "temp_threshold_primary"
+CONF_TEMP_THRESHOLD_SECONDARY = "temp_threshold_secondary"
 CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"  # Template to force both devices to run in the same mode.
 CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"  # e.g. 25°C or higher.
 CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
 
 # Default values.
-DEFAULT_TEMP_THRESHOLD = 1.0
+DEFAULT_TEMP_THRESHOLD_PRIMARY = 1.0
+DEFAULT_TEMP_THRESHOLD_SECONDARY = 3.0
 DEFAULT_HEATING_PRESETS = {
     "Eco": 15,
     "Away": 15,
@@ -55,7 +58,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_SECONDARY_CLIMATE): cv.string,
     vol.Required(CONF_SENSOR): cv.string,
     vol.Optional(CONF_OUTDOOR_SENSOR): cv.string,
-    vol.Optional(CONF_TEMP_THRESHOLD, default=DEFAULT_TEMP_THRESHOLD): vol.Coerce(float),
+    vol.Optional(CONF_TEMP_THRESHOLD_PRIMARY, default=DEFAULT_TEMP_THRESHOLD_PRIMARY): vol.Coerce(float),
+    vol.Optional(CONF_TEMP_THRESHOLD_SECONDARY, default=DEFAULT_TEMP_THRESHOLD_SECONDARY): vol.Coerce(float),
     vol.Optional(CONF_MODE_SYNC_TEMPLATE): cv.template,
     vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=DEFAULT_OUTDOOR_HOT_THRESHOLD): vol.Coerce(float),
     vol.Optional(CONF_OUTDOOR_COLD_THRESHOLD, default=DEFAULT_OUTDOOR_COLD_THRESHOLD): vol.Coerce(float),
@@ -76,7 +80,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     secondary_climate = config.get(CONF_SECONDARY_CLIMATE)
     sensor = config.get(CONF_SENSOR)
     outdoor_sensor = config.get(CONF_OUTDOOR_SENSOR)
-    temp_threshold = config.get(CONF_TEMP_THRESHOLD)
+    primary_threshold = config.get(CONF_TEMP_THRESHOLD_PRIMARY)
+    secondary_threshold = config.get(CONF_TEMP_THRESHOLD_SECONDARY)
     heating_presets = DEFAULT_HEATING_PRESETS
     cooling_presets = DEFAULT_COOLING_PRESETS
     outdoor_hot_threshold = config.get(CONF_OUTDOOR_HOT_THRESHOLD)
@@ -94,7 +99,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
             secondary_climate,
             sensor,
             outdoor_sensor,
-            temp_threshold,
+            primary_threshold,
+            secondary_threshold,
             heating_presets,
             cooling_presets,
             mode_sync_template,
@@ -113,14 +119,15 @@ class DualThermostat(ClimateEntity):
     _attr_hvac_modes = [HVACMode.AUTO]
 
     def __init__(self, hass, main_climate, secondary_climate, sensor, outdoor_sensor,
-                 temp_threshold, heating_presets, cooling_presets,
+                 primary_threshold, secondary_threshold, heating_presets, cooling_presets,
                  mode_sync_template, outdoor_hot_threshold, outdoor_cold_threshold, min_runtime):
         self.hass = hass
         self._main_climate = main_climate
         self._secondary_climate = secondary_climate
         self._sensor = sensor
         self._outdoor_sensor = outdoor_sensor
-        self._temp_threshold = temp_threshold
+        self._primary_threshold = primary_threshold
+        self._secondary_threshold = secondary_threshold
         self._heating_presets = heating_presets
         self._cooling_presets = cooling_presets
         self._mode_sync_template = mode_sync_template
@@ -130,6 +137,7 @@ class DualThermostat(ClimateEntity):
         self._last_switch_time = now() - self._min_runtime  # Allow immediate first switch
         self._last_mode = HVACMode.OFF  # Track the last effective mode
 
+        # The dual thermostat's own attributes that Home Assistant will display.
         self._attr_target_temperature = None
         self._attr_current_temperature = None
         self._attr_hvac_mode = HVACMode.AUTO
@@ -161,6 +169,11 @@ class DualThermostat(ClimateEntity):
         """Return a list of available preset modes."""
         # Return the list of preset names.
         return list({**self._heating_presets, **self._cooling_presets}.keys())
+
+    @property
+    def extra_state_attributes(self):
+        """Return additional attributes for the GUI, including the target temperature."""
+        return {"target_temperature": self._attr_target_temperature}
 
     def _evaluate_mode_sync(self):
         """If a mode_sync_template is provided, evaluate it to force both devices to the same mode.
@@ -259,11 +272,11 @@ class DualThermostat(ClimateEntity):
 
         now_time = now()
 
-        # Determine effective mode based on indoor temperature difference.
-        if self._attr_current_temperature < self._attr_target_temperature - self._temp_threshold:
+        # Determine effective mode based on indoor temperature difference using the primary threshold.
+        if self._attr_current_temperature < self._attr_target_temperature - self._primary_threshold:
             effective_mode = HVACMode.HEAT
             diff = self._attr_target_temperature - self._attr_current_temperature
-        elif self._attr_current_temperature > self._attr_target_temperature + self._temp_threshold:
+        elif self._attr_current_temperature > self._attr_target_temperature + self._primary_threshold:
             diff = self._attr_current_temperature - self._attr_target_temperature
             # Only engage cooling if outdoor conditions are sufficiently hot.
             if self._outdoor_sensor:
@@ -315,8 +328,8 @@ class DualThermostat(ClimateEntity):
         if effective_mode != HVACMode.OFF and self._attr_target_temperature is not None:
             await self._set_effective_main_temperature(self._attr_target_temperature)
 
-        # Update the secondary device.
-        await self._set_effective_secondary(effective_mode if diff > self._temp_threshold else HVACMode.OFF)
+        # Update the secondary device using the secondary threshold.
+        await self._set_effective_secondary(effective_mode if diff > self._secondary_threshold else HVACMode.OFF)
 
         # If not off, update the last switch time and mode.
         if effective_mode != HVACMode.OFF:
@@ -391,6 +404,6 @@ class DualThermostat(ClimateEntity):
             self._update_unsub = None
 
     async def _periodic_update(self, now_time):
-        """Periodic callback to re-apply the temperature logic."""
+        """Periodic callback to re-apply the temperature logic and update the entity state."""
         await self._apply_temperature()
         self.async_write_ha_state()
