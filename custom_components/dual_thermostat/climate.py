@@ -43,7 +43,7 @@ DEFAULT_COOLING_PRESETS = {
     "Eco": None,
     "Away": None,
     "Comfort": 24,
-    "Home": 16,
+    "Home": 26,
 }
 DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["Comfort"]
 DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["Comfort"]
