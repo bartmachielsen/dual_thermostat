@@ -27,8 +27,6 @@ CONF_MIN_RUNTIME = "min_runtime_seconds"  # Minimum runtime before turning off
 
 # Configuration keys for controlling behavior.
 CONF_TEMP_THRESHOLD = "temp_threshold"  # Degrees of difference before boosting.
-CONF_HEATING_PRESET_TEMPERATURES = "heating_preset_temperatures"  # e.g. official modes with target temperatures.
-CONF_COOLING_PRESET_TEMPERATURES = "cooling_preset_temperatures"  # e.g. official modes with target temperatures.
 CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"  # Template to force both devices to run in the same mode.
 CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"  # e.g. 25°C or higher.
 CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
@@ -36,27 +34,27 @@ CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
 # Default values.
 DEFAULT_TEMP_THRESHOLD = 1.0
 DEFAULT_HEATING_PRESETS = {
-    "NONE": None,
-    "ECO": 18,
-    "AWAY": 17,
-    "BOOST": 23,
-    "COMFORT": 21,
-    "HOME": 22,
-    "SLEEP": 19,
-    "ACTIVITY": 20,
+    "None": None,
+    "Eco": 18,
+    "Away": 17,
+    "Boost": 23,
+    "Comfort": 21,
+    "Home": 22,
+    "Sleep": 19,
+    "Activity": 20,
 }
 DEFAULT_COOLING_PRESETS = {
-    "NONE": None,
-    "ECO": 26,
-    "AWAY": 27,
-    "BOOST": 23,
-    "COMFORT": 25,
-    "HOME": 24,
-    "SLEEP": 26,
-    "ACTIVITY": 25,
+    "None": None,
+    "Eco": 26,
+    "Away": 27,
+    "Boost": 23,
+    "Comfort": 25,
+    "Home": 24,
+    "Sleep": 26,
+    "Activity": 25,
 }
-DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["COMFORT"]
-DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["COMFORT"]
+DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["Comfort"]
+DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["Comfort"]
 DEFAULT_MIN_RUNTIME = 300  # 5 minutes
 
 # Extend the platform schema with our custom configuration.
@@ -66,8 +64,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_SENSOR): cv.string,
     vol.Optional(CONF_OUTDOOR_SENSOR): cv.string,
     vol.Optional(CONF_TEMP_THRESHOLD, default=DEFAULT_TEMP_THRESHOLD): vol.Coerce(float),
-    vol.Optional(CONF_HEATING_PRESET_TEMPERATURES, default=DEFAULT_HEATING_PRESETS): {cv.string: vol.Coerce(float)},
-    vol.Optional(CONF_COOLING_PRESET_TEMPERATURES, default=DEFAULT_COOLING_PRESETS): {cv.string: vol.Coerce(float)},
     vol.Optional(CONF_MODE_SYNC_TEMPLATE): cv.template,
     vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=DEFAULT_OUTDOOR_HOT_THRESHOLD): vol.Coerce(float),
     vol.Optional(CONF_OUTDOOR_COLD_THRESHOLD, default=DEFAULT_OUTDOOR_COLD_THRESHOLD): vol.Coerce(float),
@@ -89,8 +85,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     sensor = config.get(CONF_SENSOR)
     outdoor_sensor = config.get(CONF_OUTDOOR_SENSOR)
     temp_threshold = config.get(CONF_TEMP_THRESHOLD)
-    heating_presets = config.get(CONF_HEATING_PRESET_TEMPERATURES) or DEFAULT_HEATING_PRESETS
-    cooling_presets = config.get(CONF_COOLING_PRESET_TEMPERATURES) or DEFAULT_COOLING_PRESETS
+    heating_presets = DEFAULT_HEATING_PRESETS
+    cooling_presets = DEFAULT_COOLING_PRESETS
     outdoor_hot_threshold = config.get(CONF_OUTDOOR_HOT_THRESHOLD)
     outdoor_cold_threshold = config.get(CONF_OUTDOOR_COLD_THRESHOLD)
     min_runtime = config.get(CONF_MIN_RUNTIME, DEFAULT_MIN_RUNTIME)
@@ -145,7 +141,7 @@ class DualThermostat(ClimateEntity):
         self._attr_target_temperature = None
         self._attr_current_temperature = None
         self._attr_hvac_mode = HVACMode.AUTO
-        self._attr_preset_mode = "NONE"
+        self._attr_preset_mode = "None"
         self._update_unsub = None  # Will hold our periodic update unsubscribe callback
 
     @property
@@ -171,7 +167,7 @@ class DualThermostat(ClimateEntity):
     @property
     def preset_modes(self):
         """Return a list of available preset modes."""
-        return ["NONE", "ECO", "AWAY", "BOOST", "COMFORT", "HOME", "SLEEP", "ACTIVITY"]
+        return ["None", "Eco", "Away", "Boost", "Comfort", "Home", "Sleep", "Activity"]
 
     def _evaluate_mode_sync(self):
         """If a mode_sync_template is provided, evaluate it to force both devices to the same mode.
@@ -215,11 +211,11 @@ class DualThermostat(ClimateEntity):
             _LOGGER.error("Preset mode %s not recognized", preset_mode)
             return
 
-        # Handle 'NONE' preset as a special case to disable thermostat control.
-        if preset_mode == "NONE":
+        # Handle 'None' preset as a special case to disable thermostat control.
+        if preset_mode == "None":
             self._attr_preset_mode = preset_mode
             self._attr_target_temperature = None
-            _LOGGER.debug("Preset mode set to NONE; disabling thermostat control")
+            _LOGGER.debug("Preset mode set to None; disabling thermostat control")
             await self._set_effective_main_hvac_mode(HVACMode.OFF)
             await self._set_effective_secondary(HVACMode.OFF)
             self.async_write_ha_state()
@@ -271,9 +267,9 @@ class DualThermostat(ClimateEntity):
             _LOGGER.error("Error reading sensor %s: %s", self._sensor, e)
             return
 
-        # If no target temperature is set (e.g. preset 'NONE'), disable control.
+        # If no target temperature is set (e.g. preset 'None'), disable control.
         if self._attr_target_temperature is None:
-            _LOGGER.debug("No target temperature set (preset mode NONE); turning off HVAC devices")
+            _LOGGER.debug("No target temperature set (preset mode None); turning off HVAC devices")
             await self._set_effective_main_hvac_mode(HVACMode.OFF)
             await self._set_effective_secondary(HVACMode.OFF)
             return

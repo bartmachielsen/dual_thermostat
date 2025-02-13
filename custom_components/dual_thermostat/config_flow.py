@@ -22,10 +22,6 @@ CONF_HEATING_ECO_TEMPERATURE = "heating_eco_temperature"
 CONF_COOLING_COMFORT_TEMPERATURE = "cooling_comfort_temperature"
 CONF_COOLING_ECO_TEMPERATURE = "cooling_eco_temperature"
 
-# Final keys passed to the integration.
-CONF_HEATING_PRESET_TEMPERATURES = "heating_preset_temperatures"
-CONF_COOLING_PRESET_TEMPERATURES = "cooling_preset_temperatures"
-
 CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"
 CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"
 CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"
@@ -58,19 +54,6 @@ class DualThermostatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         errors = {}
         if user_input is not None:
-            # Consolidate heating preset temperatures into a dictionary.
-            heating_preset = {
-                "comfort": user_input.pop(CONF_HEATING_COMFORT_TEMPERATURE),
-                "eco": user_input.pop(CONF_HEATING_ECO_TEMPERATURE),
-            }
-            # Consolidate cooling preset temperatures into a dictionary.
-            cooling_preset = {
-                "comfort": user_input.pop(CONF_COOLING_COMFORT_TEMPERATURE),
-                "eco": user_input.pop(CONF_COOLING_ECO_TEMPERATURE),
-            }
-            user_input[CONF_HEATING_PRESET_TEMPERATURES] = heating_preset
-            user_input[CONF_COOLING_PRESET_TEMPERATURES] = cooling_preset
-
             return self.async_create_entry(title="Dual Thermostat", data=user_input)
 
         return self.async_show_form(
@@ -92,18 +75,6 @@ class DualThermostatOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage the options."""
         if user_input is not None:
-            # Consolidate preset temperatures from options.
-            heating_preset = {
-                "comfort": user_input.pop(CONF_HEATING_COMFORT_TEMPERATURE),
-                "eco": user_input.pop(CONF_HEATING_ECO_TEMPERATURE),
-            }
-            cooling_preset = {
-                "comfort": user_input.pop(CONF_COOLING_COMFORT_TEMPERATURE),
-                "eco": user_input.pop(CONF_COOLING_ECO_TEMPERATURE),
-            }
-            user_input[CONF_HEATING_PRESET_TEMPERATURES] = heating_preset
-            user_input[CONF_COOLING_PRESET_TEMPERATURES] = cooling_preset
-
             return self.async_create_entry(title="", data=user_input)
 
         options_schema = vol.Schema({
@@ -126,22 +97,6 @@ class DualThermostatOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_TEMP_THRESHOLD,
                 default=self.config_entry.data.get(CONF_TEMP_THRESHOLD, 1.5)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_HEATING_COMFORT_TEMPERATURE,
-                default=self.config_entry.data.get(CONF_HEATING_PRESET_TEMPERATURES, {}).get("comfort", 21)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_HEATING_ECO_TEMPERATURE,
-                default=self.config_entry.data.get(CONF_HEATING_PRESET_TEMPERATURES, {}).get("eco", 17)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_COOLING_COMFORT_TEMPERATURE,
-                default=self.config_entry.data.get(CONF_COOLING_PRESET_TEMPERATURES, {}).get("comfort", 25)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_COOLING_ECO_TEMPERATURE,
-                default=self.config_entry.data.get(CONF_COOLING_PRESET_TEMPERATURES, {}).get("eco", 28)
             ): vol.Coerce(float),
             vol.Optional(
                 CONF_OUTDOOR_HOT_THRESHOLD,
