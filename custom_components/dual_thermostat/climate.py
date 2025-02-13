@@ -27,18 +27,36 @@ CONF_MIN_RUNTIME = "min_runtime_seconds"  # Minimum runtime before turning off
 
 # Configuration keys for controlling behavior.
 CONF_TEMP_THRESHOLD = "temp_threshold"  # Degrees of difference before boosting.
-CONF_HEATING_PRESET_TEMPERATURES = "heating_preset_temperatures"  # e.g. {"comfort": 21, "standby": 18, "default": 15}.
-CONF_COOLING_PRESET_TEMPERATURES = "cooling_preset_temperatures"  # e.g. {"comfort": 25, "standby": 23, "default": None}.
+CONF_HEATING_PRESET_TEMPERATURES = "heating_preset_temperatures"  # e.g. official modes with target temperatures.
+CONF_COOLING_PRESET_TEMPERATURES = "cooling_preset_temperatures"  # e.g. official modes with target temperatures.
 CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"  # Template to force both devices to run in the same mode.
 CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"  # e.g. 25°C or higher.
 CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
 
 # Default values.
 DEFAULT_TEMP_THRESHOLD = 1.0
-DEFAULT_HEATING_PRESETS = {"comfort": 21, "standby": 18, "default": 15}
-DEFAULT_COOLING_PRESETS = {"comfort": 25, "standby": 23, "default": None}
-DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["comfort"]
-DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["comfort"]
+DEFAULT_HEATING_PRESETS = {
+    "NONE": None,
+    "ECO": 18,
+    "AWAY": 17,
+    "BOOST": 23,
+    "COMFORT": 21,
+    "HOME": 22,
+    "SLEEP": 19,
+    "ACTIVITY": 20,
+}
+DEFAULT_COOLING_PRESETS = {
+    "NONE": None,
+    "ECO": 26,
+    "AWAY": 27,
+    "BOOST": 23,
+    "COMFORT": 25,
+    "HOME": 24,
+    "SLEEP": 26,
+    "ACTIVITY": 25,
+}
+DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["COMFORT"]
+DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["COMFORT"]
 DEFAULT_MIN_RUNTIME = 300  # 5 minutes
 
 # Extend the platform schema with our custom configuration.
@@ -127,7 +145,7 @@ class DualThermostat(ClimateEntity):
         self._attr_target_temperature = None
         self._attr_current_temperature = None
         self._attr_hvac_mode = HVACMode.AUTO
-        self._attr_preset_mode = "default"
+        self._attr_preset_mode = "NONE"
         self._update_unsub = None  # Will hold our periodic update unsubscribe callback
 
     @property
@@ -152,8 +170,8 @@ class DualThermostat(ClimateEntity):
 
     @property
     def preset_modes(self):
-        """Return a list of available preset modes (based on the heating presets)."""
-        return list(self._heating_presets.keys())
+        """Return a list of available preset modes."""
+        return ["NONE", "ECO", "AWAY", "BOOST", "COMFORT", "HOME", "SLEEP", "ACTIVITY"]
 
     def _evaluate_mode_sync(self):
         """If a mode_sync_template is provided, evaluate it to force both devices to the same mode.
@@ -197,6 +215,16 @@ class DualThermostat(ClimateEntity):
             _LOGGER.error("Preset mode %s not recognized", preset_mode)
             return
 
+        # Handle 'NONE' preset as a special case to disable thermostat control.
+        if preset_mode == "NONE":
+            self._attr_preset_mode = preset_mode
+            self._attr_target_temperature = None
+            _LOGGER.debug("Preset mode set to NONE; disabling thermostat control")
+            await self._set_effective_main_hvac_mode(HVACMode.OFF)
+            await self._set_effective_secondary(HVACMode.OFF)
+            self.async_write_ha_state()
+            return
+
         self._attr_preset_mode = preset_mode
 
         sensor_state = self.hass.states.get(self._sensor)
@@ -211,11 +239,17 @@ class DualThermostat(ClimateEntity):
         if current_temp is not None and preset_mode in self._heating_presets and preset_mode in self._cooling_presets:
             heating_target = self._heating_presets[preset_mode]
             cooling_target = self._cooling_presets[preset_mode]
-            midpoint = (heating_target + cooling_target) / 2
-            if current_temp < midpoint:
+            # If either preset is None, use the one that is set.
+            if heating_target is None:
+                self._attr_target_temperature = cooling_target
+            elif cooling_target is None:
                 self._attr_target_temperature = heating_target
             else:
-                self._attr_target_temperature = cooling_target
+                midpoint = (heating_target + cooling_target) / 2
+                if current_temp < midpoint:
+                    self._attr_target_temperature = heating_target
+                else:
+                    self._attr_target_temperature = cooling_target
         elif preset_mode in self._heating_presets:
             self._attr_target_temperature = self._heating_presets[preset_mode]
         elif preset_mode in self._cooling_presets:
@@ -235,6 +269,13 @@ class DualThermostat(ClimateEntity):
             self._attr_current_temperature = float(sensor_state.state)
         except Exception as e:
             _LOGGER.error("Error reading sensor %s: %s", self._sensor, e)
+            return
+
+        # If no target temperature is set (e.g. preset 'NONE'), disable control.
+        if self._attr_target_temperature is None:
+            _LOGGER.debug("No target temperature set (preset mode NONE); turning off HVAC devices")
+            await self._set_effective_main_hvac_mode(HVACMode.OFF)
+            await self._set_effective_secondary(HVACMode.OFF)
             return
 
         now_time = now()
