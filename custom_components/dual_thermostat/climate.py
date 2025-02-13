@@ -212,7 +212,7 @@ class DualThermostat(ClimateEntity):
             return
 
         # Handle 'None' preset as a special case to disable thermostat control.
-        if preset_mode == "None":
+        if preset_mode=="None":
             self._attr_preset_mode = preset_mode
             self._attr_target_temperature = None
             _LOGGER.debug("Preset mode set to None; disabling thermostat control")
@@ -312,7 +312,7 @@ class DualThermostat(ClimateEntity):
             diff = 0
 
         # Prevent rapid switching between heating and cooling.
-        if effective_mode != HVACMode.OFF and effective_mode != self._last_mode:
+        if effective_mode!=HVACMode.OFF and effective_mode!=self._last_mode:
             if now_time - self._last_switch_time < self._min_runtime:
                 _LOGGER.debug(
                     "Mode switch from %s to %s suppressed due to minimum runtime requirement",
@@ -330,7 +330,7 @@ class DualThermostat(ClimateEntity):
         await self._set_effective_secondary(effective_mode if diff > self._temp_threshold else HVACMode.OFF)
 
         # If not off, update the last switch time and mode.
-        if effective_mode != HVACMode.OFF:
+        if effective_mode!=HVACMode.OFF:
             self._last_switch_time = now_time
             self._last_mode = effective_mode
 
@@ -353,13 +353,29 @@ class DualThermostat(ClimateEntity):
         await self.hass.services.async_call("climate", "set_hvac_mode", service_data)
 
     async def _set_effective_secondary(self, hvac_mode):
-        """Call the climate service to set the secondary device's HVAC mode."""
-        service_data = {
+        """Call the climate service to set the secondary device's HVAC mode and temperature.
+
+        When turning on the secondary device, also update its target temperature to match the mode.
+        """
+        if hvac_mode!=HVACMode.OFF and self._attr_target_temperature is not None:
+            service_data_temp = {
+                "entity_id": self.effective_secondary_device,
+                "temperature": self._attr_target_temperature,
+            }
+            _LOGGER.debug(
+                "Setting secondary device %s to target temperature %s",
+                self.effective_secondary_device, self._attr_target_temperature
+            )
+            await self.hass.services.async_call("climate", "set_temperature", service_data_temp)
+        service_data_mode = {
             "entity_id": self.effective_secondary_device,
             "hvac_mode": hvac_mode,
         }
-        _LOGGER.debug("Setting secondary device %s to hvac_mode %s", self.effective_secondary_device, hvac_mode)
-        await self.hass.services.async_call("climate", "set_hvac_mode", service_data)
+        _LOGGER.debug(
+            "Setting secondary device %s to hvac_mode %s",
+            self.effective_secondary_device, hvac_mode
+        )
+        await self.hass.services.async_call("climate", "set_hvac_mode", service_data_mode)
 
     async def async_update(self):
         """Fetch new state data (update the indoor sensor reading)."""
