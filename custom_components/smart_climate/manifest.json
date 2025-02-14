@@ -1,8 +1,8 @@
 {
-  "domain": "dual_thermostat",
-  "name": "Dual Thermostat",
+  "domain": "Smart Climate",
+  "name": "Smart Climate",
   "version": "0.0.1",
-  "documentation": "https://github.com/bartmachielsen/dual_thermostat",
+  "documentation": "https://github.com/bartmachielsen/smart_climate",
   "requirements": [],
   "dependencies": ["climate"],
   "codeowners": ["@bartmachielsen"],

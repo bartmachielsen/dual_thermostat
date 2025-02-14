@@ -171,3 +171,4 @@ cython_debug/
 /.idea/vcs.xml
 /.idea/.name
 /.idea/smart_thermostat.iml
+/.idea/smart_climate.iml
