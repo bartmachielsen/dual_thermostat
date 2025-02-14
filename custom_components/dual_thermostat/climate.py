@@ -11,6 +11,7 @@ from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.template import Template
 from homeassistant.util.dt import now
 from homeassistant.helpers.event import async_track_time_interval  # <-- Import periodic tracker
+from homeassistant.helpers.restore_state import RestoreEntity  # <-- Import restore state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,20 +38,24 @@ CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
 DEFAULT_TEMP_THRESHOLD_PRIMARY = 1.0
 DEFAULT_TEMP_THRESHOLD_SECONDARY = 3.0
 DEFAULT_HEATING_PRESETS = {
-    "off": None,
+    "none": None,
     "eco": 15,
     "away": 15,
-    "night": 15,
+    "sleep": 15,
     "comfort": 21,
+    "boost": 24,
     "home": 18,
+    "activity": 18
 }
 DEFAULT_COOLING_PRESETS = {
-    "off": None,
+    "none": None,
     "eco": None,
     "away": None,
-    "night": 30,
+    "sleep": 30,
     "comfort": 24,
+    "boost": 22,
     "home": 26,
+    "activity": 26
 }
 DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["comfort"]
 DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["comfort"]
@@ -115,7 +120,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     ])
 
 
-class DualThermostat(ClimateEntity):
+class DualThermostat(ClimateEntity, RestoreEntity):
     """A dual thermostat that self-manages its subdevices while always reporting 'auto'."""
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = ClimateEntityFeature.PRESET_MODE
@@ -405,6 +410,13 @@ class DualThermostat(ClimateEntity):
             _LOGGER.error("Sensor %s state is unknown or unavailable during update", self._sensor)
 
     async def async_added_to_hass(self):
+        """Restore preset and target temperature on startup, then start periodic updates."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state:
+            self._attr_preset_mode = last_state.attributes.get("preset_mode", "eco")
+            self._attr_target_temperature = last_state.attributes.get("target_temperature", self._attr_target_temperature)
+            _LOGGER.debug("Restored state: preset_mode=%s, target_temperature=%s", self._attr_preset_mode, self._attr_target_temperature)
         self._update_unsub = async_track_time_interval(
             self.hass, self._periodic_update, timedelta(seconds=60)
         )
