@@ -37,14 +37,18 @@ CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
 DEFAULT_TEMP_THRESHOLD_PRIMARY = 1.0
 DEFAULT_TEMP_THRESHOLD_SECONDARY = 3.0
 DEFAULT_HEATING_PRESETS = {
+    "off": None,
     "eco": 15,
     "away": 15,
+    "night": 15,
     "comfort": 21,
     "home": 18,
 }
 DEFAULT_COOLING_PRESETS = {
+    "off": None,
     "eco": None,
     "away": None,
+    "night": 30,
     "comfort": 24,
     "home": 26,
 }
