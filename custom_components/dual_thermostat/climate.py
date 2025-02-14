@@ -37,19 +37,19 @@ CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
 DEFAULT_TEMP_THRESHOLD_PRIMARY = 1.0
 DEFAULT_TEMP_THRESHOLD_SECONDARY = 3.0
 DEFAULT_HEATING_PRESETS = {
-    "Eco": 15,
-    "Away": 15,
-    "Comfort": 21,
-    "Home": 18,
+    "eco": 15,
+    "away": 15,
+    "comfort": 21,
+    "home": 18,
 }
 DEFAULT_COOLING_PRESETS = {
-    "Eco": None,
-    "Away": None,
-    "Comfort": 24,
-    "Home": 26,
+    "eco": None,
+    "away": None,
+    "comfort": 24,
+    "home": 26,
 }
-DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["Comfort"]
-DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["Comfort"]
+DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["comfort"]
+DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["comfort"]
 DEFAULT_MIN_RUNTIME = 300  # 5 minutes
 
 # Extend the platform schema with our custom configuration.
@@ -134,13 +134,18 @@ class DualThermostat(ClimateEntity):
         self._outdoor_cold_threshold = outdoor_cold_threshold
         self._min_runtime = timedelta(seconds=min_runtime)
         self._last_switch_time = now() - self._min_runtime  # Allow immediate first switch
-        self._last_mode = HVACMode.OFF
+
+        # Track last commands sent to avoid redundant service calls.
+        self._last_main_mode = HVACMode.OFF
+        self._last_main_temp = None
+        self._last_secondary_mode = HVACMode.OFF
+        self._last_secondary_temp = None
 
         # Attributes shown by Home Assistant.
         self._attr_target_temperature = None
         self._attr_current_temperature = None
         self._attr_hvac_mode = HVACMode.AUTO
-        self._attr_preset_mode = "Eco"
+        self._attr_preset_mode = "eco"
         self._update_unsub = None
 
         # Ensure the entity has a unique ID for UI management.
@@ -204,7 +209,7 @@ class DualThermostat(ClimateEntity):
             return
 
         self._attr_target_temperature = temperature
-        await self._apply_temperature()
+        await self._apply_temperature(skip_min_runtime=True)
         self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode):
@@ -262,8 +267,13 @@ class DualThermostat(ClimateEntity):
 
         if self._attr_target_temperature is None:
             _LOGGER.debug("No target temperature set (preset mode None); turning off HVAC devices")
-            await self._set_effective_main_hvac_mode(HVACMode.OFF)
-            await self._set_effective_secondary(HVACMode.OFF)
+            # Only send commands if there is a change from the last known state.
+            if self._last_main_mode != HVACMode.OFF:
+                await self._set_effective_main_hvac_mode(HVACMode.OFF)
+                self._last_main_mode = HVACMode.OFF
+            if self._last_secondary_mode != HVACMode.OFF:
+                await self._set_effective_secondary(HVACMode.OFF)
+                self._last_secondary_mode = HVACMode.OFF
             return
 
         now_time = now()
@@ -304,28 +314,47 @@ class DualThermostat(ClimateEntity):
             diff = 0
 
         # Prevent rapid switching unless min_runtime is skipped.
-        if effective_mode!=HVACMode.OFF and effective_mode!=self._last_mode:
+        if effective_mode != HVACMode.OFF and effective_mode != self._last_main_mode:
             if not skip_min_runtime and now_time - self._last_switch_time < self._min_runtime:
                 _LOGGER.debug(
                     "Mode switch from %s to %s suppressed due to minimum runtime requirement",
-                    self._last_mode, effective_mode
+                    self._last_main_mode, effective_mode
                 )
-                effective_mode = self._last_mode
+                effective_mode = self._last_main_mode
 
         _LOGGER.debug(
             "Current temp: %s, Target temp: %s, Diff: %s, Effective mode: %s",
             self._attr_current_temperature, self._attr_target_temperature, diff, effective_mode
         )
 
-        await self._set_effective_main_hvac_mode(effective_mode)
-        if effective_mode!=HVACMode.OFF and self._attr_target_temperature is not None:
-            await self._set_effective_main_temperature(self._attr_target_temperature)
+        # Calculate secondary effective mode based on secondary threshold.
+        secondary_effective_mode = effective_mode if diff > self._secondary_threshold else HVACMode.OFF
 
-        await self._set_effective_secondary(effective_mode if diff > self._secondary_threshold else HVACMode.OFF)
+        # Signal main climate device only if a change is required.
+        if effective_mode != self._last_main_mode:
+            await self._set_effective_main_hvac_mode(effective_mode)
+            self._last_main_mode = effective_mode
+        else:
+            _LOGGER.debug("Main device HVAC mode remains %s; no update required", effective_mode)
 
-        if effective_mode!=HVACMode.OFF:
+        if effective_mode != HVACMode.OFF and self._attr_target_temperature is not None:
+            if self._last_main_temp != self._attr_target_temperature:
+                await self._set_effective_main_temperature(self._attr_target_temperature)
+                self._last_main_temp = self._attr_target_temperature
+            else:
+                _LOGGER.debug("Main device temperature remains %s; no update required", self._attr_target_temperature)
+
+        # Signal secondary device only if a change is required.
+        secondary_temp = self._attr_target_temperature if secondary_effective_mode != HVACMode.OFF else None
+        if (secondary_effective_mode != self._last_secondary_mode) or (secondary_temp != self._last_secondary_temp):
+            await self._set_effective_secondary(secondary_effective_mode)
+            self._last_secondary_mode = secondary_effective_mode
+            self._last_secondary_temp = secondary_temp
+        else:
+            _LOGGER.debug("Secondary device state remains unchanged; no update required")
+
+        if effective_mode != HVACMode.OFF:
             self._last_switch_time = now_time
-            self._last_mode = effective_mode
 
     async def _set_effective_main_temperature(self, temperature):
         service_data = {
@@ -344,7 +373,7 @@ class DualThermostat(ClimateEntity):
         await self.hass.services.async_call("climate", "set_hvac_mode", service_data)
 
     async def _set_effective_secondary(self, hvac_mode):
-        if hvac_mode!=HVACMode.OFF and self._attr_target_temperature is not None:
+        if hvac_mode != HVACMode.OFF and self._attr_target_temperature is not None:
             service_data_temp = {
                 "entity_id": self.effective_secondary_device,
                 "temperature": self._attr_target_temperature,
