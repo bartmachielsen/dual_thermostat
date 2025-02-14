@@ -15,7 +15,7 @@ from homeassistant.helpers.restore_state import RestoreEntity  # <-- Import rest
 
 _LOGGER = logging.getLogger(__name__)
 
-DOMAIN = "dual_thermostat"
+DOMAIN = "smart_climate"  # Renamed from dual_thermostat
 
 # Configuration keys for the main and secondary climate devices.
 CONF_MAIN_CLIMATE = "main_climate"
@@ -64,7 +64,7 @@ DEFAULT_MIN_RUNTIME = 300  # 5 minutes
 # Extend the platform schema with our custom configuration.
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_MAIN_CLIMATE): cv.string,
-    vol.Required(CONF_SECONDARY_CLIMATE): cv.string,
+    vol.Optional(CONF_SECONDARY_CLIMATE): cv.string,  # Made optional instead of required
     vol.Required(CONF_SENSOR): cv.string,
     vol.Optional(CONF_OUTDOOR_SENSOR): cv.string,
     vol.Optional(CONF_TEMP_THRESHOLD_PRIMARY, default=DEFAULT_TEMP_THRESHOLD_PRIMARY): vol.Coerce(float),
@@ -77,16 +77,16 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the Dual Thermostat platform from a config entry."""
+    """Set up the Smart Climate platform from a config entry."""
     config = config_entry.data
     await async_setup_platform(hass, config, async_add_entities)
     return True
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Set up the Dual Thermostat platform."""
+    """Set up the Smart Climate platform."""
     main_climate = config.get(CONF_MAIN_CLIMATE)
-    secondary_climate = config.get(CONF_SECONDARY_CLIMATE)
+    secondary_climate = config.get(CONF_SECONDARY_CLIMATE)  # May be None
     sensor = config.get(CONF_SENSOR)
     outdoor_sensor = config.get(CONF_OUTDOOR_SENSOR)
     primary_threshold = config.get(CONF_TEMP_THRESHOLD_PRIMARY)
@@ -102,7 +102,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
         mode_sync_template = Template(mode_sync_template, hass)
 
     async_add_entities([
-        DualThermostat(
+        SmartClimate(
             hass,
             main_climate,
             secondary_climate,
@@ -120,8 +120,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     ])
 
 
-class DualThermostat(ClimateEntity, RestoreEntity):
-    """A dual thermostat that self-manages its subdevices while always reporting 'auto'."""
+class SmartClimate(ClimateEntity, RestoreEntity):
+    """A smart climate controller that self-manages its subdevices while always reporting 'auto'."""
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = ClimateEntityFeature.PRESET_MODE
     _attr_hvac_modes = [HVACMode.AUTO]
@@ -131,7 +131,7 @@ class DualThermostat(ClimateEntity, RestoreEntity):
                  mode_sync_template, outdoor_hot_threshold, outdoor_cold_threshold, min_runtime):
         self.hass = hass
         self._main_climate = main_climate
-        self._secondary_climate = secondary_climate
+        self._secondary_climate = secondary_climate  # May be None if not configured
         self._sensor = sensor
         self._outdoor_sensor = outdoor_sensor
         self._primary_threshold = primary_threshold
@@ -158,12 +158,17 @@ class DualThermostat(ClimateEntity, RestoreEntity):
         self._update_unsub = None
 
         # Ensure the entity has a unique ID for UI management.
-        self._attr_unique_id = f"dual_thermostat_{main_climate}_{secondary_climate}"
+        if self._secondary_climate:
+            self._attr_unique_id = f"smart_climate_{main_climate}_{secondary_climate}"
+        else:
+            self._attr_unique_id = f"smart_climate_{main_climate}"
 
     @property
     def name(self):
-        """Return the name of the dual thermostat."""
-        return f"Dual Thermostat ({self._main_climate} + {self._secondary_climate})"
+        """Return the name of the smart climate controller."""
+        if self._secondary_climate:
+            return f"Smart Climate ({self._main_climate} + {self._secondary_climate})"
+        return f"Smart Climate ({self._main_climate})"
 
     @property
     def current_temperature(self):
@@ -208,7 +213,7 @@ class DualThermostat(ClimateEntity, RestoreEntity):
 
     @property
     def effective_secondary_device(self):
-        """Return the entity_id of the secondary climate device."""
+        """Return the entity_id of the secondary climate device, if configured."""
         return self._secondary_climate
 
     async def async_set_temperature(self, **kwargs):
@@ -280,7 +285,7 @@ class DualThermostat(ClimateEntity, RestoreEntity):
             if self._last_main_mode != HVACMode.OFF:
                 await self._set_effective_main_hvac_mode(HVACMode.OFF)
                 self._last_main_mode = HVACMode.OFF
-            if self._last_secondary_mode != HVACMode.OFF:
+            if self._secondary_climate is not None and self._last_secondary_mode != HVACMode.OFF:
                 await self._set_effective_secondary(HVACMode.OFF)
                 self._last_secondary_mode = HVACMode.OFF
             return
@@ -336,9 +341,6 @@ class DualThermostat(ClimateEntity, RestoreEntity):
             self._attr_current_temperature, self._attr_target_temperature, diff, effective_mode
         )
 
-        # Calculate secondary effective mode based on secondary threshold.
-        secondary_effective_mode = effective_mode if diff > self._secondary_threshold else HVACMode.OFF
-
         # Signal main climate device only if a change is required.
         if effective_mode != self._last_main_mode:
             await self._set_effective_main_hvac_mode(effective_mode)
@@ -353,14 +355,16 @@ class DualThermostat(ClimateEntity, RestoreEntity):
             else:
                 _LOGGER.debug("Main device temperature remains %s; no update required", self._attr_target_temperature)
 
-        # Signal secondary device only if a change is required.
-        secondary_temp = self._attr_target_temperature if secondary_effective_mode != HVACMode.OFF else None
-        if (secondary_effective_mode != self._last_secondary_mode) or (secondary_temp != self._last_secondary_temp):
-            await self._set_effective_secondary(secondary_effective_mode)
-            self._last_secondary_mode = secondary_effective_mode
-            self._last_secondary_temp = secondary_temp
-        else:
-            _LOGGER.debug("Secondary device state remains unchanged; no update required")
+        # Signal secondary device only if configured and a change is required.
+        if self._secondary_climate is not None:
+            secondary_effective_mode = effective_mode if diff > self._secondary_threshold else HVACMode.OFF
+            secondary_temp = self._attr_target_temperature if secondary_effective_mode != HVACMode.OFF else None
+            if (secondary_effective_mode != self._last_secondary_mode) or (secondary_temp != self._last_secondary_temp):
+                await self._set_effective_secondary(secondary_effective_mode)
+                self._last_secondary_mode = secondary_effective_mode
+                self._last_secondary_temp = secondary_temp
+            else:
+                _LOGGER.debug("Secondary device state remains unchanged; no update required")
 
         if effective_mode != HVACMode.OFF:
             self._last_switch_time = now_time
@@ -382,6 +386,9 @@ class DualThermostat(ClimateEntity, RestoreEntity):
         await self.hass.services.async_call("climate", "set_hvac_mode", service_data)
 
     async def _set_effective_secondary(self, hvac_mode):
+        if self._secondary_climate is None:
+            _LOGGER.debug("No secondary device configured, skipping secondary update")
+            return
         if hvac_mode != HVACMode.OFF and self._attr_target_temperature is not None:
             service_data_temp = {
                 "entity_id": self.effective_secondary_device,
