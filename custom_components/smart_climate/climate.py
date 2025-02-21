@@ -34,15 +34,19 @@ CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"  # Template to force both devices
 CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"  # e.g. 25°C or higher.
 CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
 
+# New configuration keys for temperature offsets.
+CONF_PRIMARY_OFFSET = "primary_offset"
+CONF_SECONDARY_OFFSET = "secondary_offset"
+
 # Default values.
 DEFAULT_TEMP_THRESHOLD_PRIMARY = 1.0
-DEFAULT_TEMP_THRESHOLD_SECONDARY = 3.0
+DEFAULT_TEMP_THRESHOLD_SECONDARY = 2.0
 DEFAULT_HEATING_PRESETS = {
     "none": None,
     "eco": 15,
     "away": 15,
     "sleep": 15,
-    "comfort": 21,
+    "comfort": 20,
     "boost": 24,
     "home": 18,
     "activity": 18
@@ -61,6 +65,10 @@ DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["comfort"]
 DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["comfort"]
 DEFAULT_MIN_RUNTIME = 300  # 5 minutes
 
+# Default offsets.
+DEFAULT_PRIMARY_OFFSET = 1.0
+DEFAULT_SECONDARY_OFFSET = 0.0
+
 # Extend the platform schema with our custom configuration.
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_MAIN_CLIMATE): cv.string,
@@ -73,6 +81,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=DEFAULT_OUTDOOR_HOT_THRESHOLD): vol.Coerce(float),
     vol.Optional(CONF_OUTDOOR_COLD_THRESHOLD, default=DEFAULT_OUTDOOR_COLD_THRESHOLD): vol.Coerce(float),
     vol.Optional(CONF_MIN_RUNTIME, default=DEFAULT_MIN_RUNTIME): vol.Coerce(int),
+    vol.Optional(CONF_PRIMARY_OFFSET, default=DEFAULT_PRIMARY_OFFSET): vol.Coerce(float),
+    vol.Optional(CONF_SECONDARY_OFFSET, default=DEFAULT_SECONDARY_OFFSET): vol.Coerce(float),
 })
 
 
@@ -96,6 +106,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     outdoor_hot_threshold = config.get(CONF_OUTDOOR_HOT_THRESHOLD)
     outdoor_cold_threshold = config.get(CONF_OUTDOOR_COLD_THRESHOLD)
     min_runtime = config.get(CONF_MIN_RUNTIME, DEFAULT_MIN_RUNTIME)
+    primary_offset = config.get(CONF_PRIMARY_OFFSET, DEFAULT_PRIMARY_OFFSET)
+    secondary_offset = config.get(CONF_SECONDARY_OFFSET, DEFAULT_SECONDARY_OFFSET)
 
     mode_sync_template = config.get(CONF_MODE_SYNC_TEMPLATE)
     if mode_sync_template:
@@ -115,7 +127,9 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
             mode_sync_template,
             outdoor_hot_threshold,
             outdoor_cold_threshold,
-            min_runtime
+            min_runtime,
+            primary_offset,
+            secondary_offset,
         )
     ])
 
@@ -128,7 +142,8 @@ class SmartClimate(ClimateEntity, RestoreEntity):
 
     def __init__(self, hass, main_climate, secondary_climate, sensor, outdoor_sensor,
                  primary_threshold, secondary_threshold, heating_presets, cooling_presets,
-                 mode_sync_template, outdoor_hot_threshold, outdoor_cold_threshold, min_runtime):
+                 mode_sync_template, outdoor_hot_threshold, outdoor_cold_threshold, min_runtime,
+                 primary_offset, secondary_offset):
         self.hass = hass
         self._main_climate = main_climate
         self._secondary_climate = secondary_climate  # May be None if not configured
@@ -150,11 +165,16 @@ class SmartClimate(ClimateEntity, RestoreEntity):
         self._last_secondary_mode = HVACMode.OFF
         self._last_secondary_temp = None
 
+        # Offsets for target temperature.
+        self._primary_offset = primary_offset
+        self._secondary_offset = secondary_offset
+
         # Attributes shown by Home Assistant.
         self._attr_target_temperature = None
         self._attr_current_temperature = None
         self._attr_hvac_mode = HVACMode.AUTO
         self._attr_preset_mode = "eco"
+
         self._update_unsub = None
 
         # Ensure the entity has a unique ID for UI management.
@@ -192,8 +212,10 @@ class SmartClimate(ClimateEntity, RestoreEntity):
 
     @property
     def extra_state_attributes(self):
-        """Return additional attributes for the GUI."""
-        return {"target_temperature": self._attr_target_temperature}
+        return {
+            "target_temperature": self._attr_target_temperature,
+            "preset_mode": self._attr_preset_mode,
+        }
 
     def _evaluate_mode_sync(self):
         """Evaluate the mode_sync template if provided."""
@@ -223,7 +245,7 @@ class SmartClimate(ClimateEntity, RestoreEntity):
             return
 
         self._attr_target_temperature = temperature
-        await self._apply_temperature(skip_min_runtime=True)
+        await self._apply_temperature()
         self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode):
@@ -264,10 +286,10 @@ class SmartClimate(ClimateEntity, RestoreEntity):
             self._attr_target_temperature = self._cooling_presets[preset_mode]
 
         _LOGGER.debug("Preset mode set to %s; Target temp: %s", preset_mode, self._attr_target_temperature)
-        await self._apply_temperature(skip_min_runtime=True)
+        await self._apply_temperature()
         self.async_write_ha_state()
 
-    async def _apply_temperature(self, skip_min_runtime=False):
+    async def _apply_temperature(self):
         sensor_state = self.hass.states.get(self._sensor)
         if sensor_state is None or sensor_state.state in ["unknown", "unavailable"]:
             _LOGGER.error("Sensor %s not found or state is unknown/unavailable", self._sensor)
@@ -281,7 +303,6 @@ class SmartClimate(ClimateEntity, RestoreEntity):
 
         if self._attr_target_temperature is None:
             _LOGGER.debug("No target temperature set (preset mode None); turning off HVAC devices")
-            # Only send commands if there is a change from the last known state.
             if self._last_main_mode != HVACMode.OFF:
                 await self._set_effective_main_hvac_mode(HVACMode.OFF)
                 self._last_main_mode = HVACMode.OFF
@@ -321,20 +342,8 @@ class SmartClimate(ClimateEntity, RestoreEntity):
             else:
                 effective_mode = HVACMode.COOL
         else:
-            # Within acceptable range: change only if min_runtime has passed unless skipping check.
-            if not skip_min_runtime and now_time - self._last_switch_time < self._min_runtime:
-                return
             effective_mode = HVACMode.OFF
             diff = 0
-
-        # Prevent rapid switching unless min_runtime is skipped.
-        if effective_mode != HVACMode.OFF and effective_mode != self._last_main_mode:
-            if not skip_min_runtime and now_time - self._last_switch_time < self._min_runtime:
-                _LOGGER.debug(
-                    "Mode switch from %s to %s suppressed due to minimum runtime requirement",
-                    self._last_main_mode, effective_mode
-                )
-                effective_mode = self._last_main_mode
 
         _LOGGER.debug(
             "Current temp: %s, Target temp: %s, Diff: %s, Effective mode: %s",
@@ -349,18 +358,21 @@ class SmartClimate(ClimateEntity, RestoreEntity):
             _LOGGER.debug("Main device HVAC mode remains %s; no update required", effective_mode)
 
         if effective_mode != HVACMode.OFF and self._attr_target_temperature is not None:
-            if self._last_main_temp != self._attr_target_temperature:
-                await self._set_effective_main_temperature(self._attr_target_temperature)
-                self._last_main_temp = self._attr_target_temperature
+            # Apply the primary offset here.
+            main_target = self._attr_target_temperature + self._primary_offset
+            if self._last_main_temp != main_target:
+                await self._set_effective_main_temperature(main_target)
+                self._last_main_temp = main_target
             else:
-                _LOGGER.debug("Main device temperature remains %s; no update required", self._attr_target_temperature)
+                _LOGGER.debug("Main device temperature remains %s; no update required", main_target)
 
         # Signal secondary device only if configured and a change is required.
         if self._secondary_climate is not None:
             secondary_effective_mode = effective_mode if diff > self._secondary_threshold else HVACMode.OFF
-            secondary_temp = self._attr_target_temperature if secondary_effective_mode != HVACMode.OFF else None
+            # Apply the secondary offset here.
+            secondary_temp = (self._attr_target_temperature + self._secondary_offset) if secondary_effective_mode != HVACMode.OFF else None
             if (secondary_effective_mode != self._last_secondary_mode) or (secondary_temp != self._last_secondary_temp):
-                await self._set_effective_secondary(secondary_effective_mode)
+                await self._set_effective_secondary(secondary_effective_mode, secondary_temp)
                 self._last_secondary_mode = secondary_effective_mode
                 self._last_secondary_temp = secondary_temp
             else:
@@ -385,19 +397,16 @@ class SmartClimate(ClimateEntity, RestoreEntity):
         _LOGGER.debug("Setting main device %s to hvac_mode %s", self.effective_main_device, hvac_mode)
         await self.hass.services.async_call("climate", "set_hvac_mode", service_data)
 
-    async def _set_effective_secondary(self, hvac_mode):
+    async def _set_effective_secondary(self, hvac_mode, temperature=None):
         if self._secondary_climate is None:
             _LOGGER.debug("No secondary device configured, skipping secondary update")
             return
-        if hvac_mode != HVACMode.OFF and self._attr_target_temperature is not None:
+        if hvac_mode != HVACMode.OFF and temperature is not None:
             service_data_temp = {
                 "entity_id": self.effective_secondary_device,
-                "temperature": self._attr_target_temperature,
+                "temperature": temperature,
             }
-            _LOGGER.debug(
-                "Setting secondary device %s to target temperature %s",
-                self.effective_secondary_device, self._attr_target_temperature
-            )
+            _LOGGER.debug("Setting secondary device %s to target temperature %s", self.effective_secondary_device, temperature)
             await self.hass.services.async_call("climate", "set_temperature", service_data_temp)
         service_data_mode = {
             "entity_id": self.effective_secondary_device,
