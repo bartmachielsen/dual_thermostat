@@ -23,36 +23,47 @@ from .const import (
     DEFAULT_COOLING_PRESETS,
 )
 
+def dict_to_raw_str(d: dict) -> str:
+    """Convert a dictionary into a raw string in key:value, comma-separated format."""
+    return ", ".join(f"{k}:{v}" for k, v in d.items())
+
+def parse_presets(raw: str) -> dict:
+    """Parse a raw string of key:value pairs into a dictionary."""
+    result = {}
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" not in item:
+            continue
+        key, value = item.split(":", 1)
+        try:
+            # Convert to float if possible.
+            result[key.strip()] = float(value.strip())
+        except ValueError:
+            result[key.strip()] = value.strip()
+    return result
+
 
 class SmartClimateOptionsFlow(config_entries.OptionsFlow):
-    """Handle an options flow for the Smart Climate integration using basic types."""
+    """Handle a simplified options flow for the Smart Climate integration."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input: dict | None = None):
-        """Manage the options."""
+        """Manage the options flow."""
         if user_input is not None:
-            # Process dynamic preset fields.
-            heating_presets = {}
-            cooling_presets = {}
-            keys_to_remove = []
-            for key, value in user_input.items():
-                if key.startswith("heating_"):
-                    preset = key[len("heating_"):]
-                    heating_presets[preset] = value
-                    keys_to_remove.append(key)
-                elif key.startswith("cooling_"):
-                    preset = key[len("cooling_"):]
-                    cooling_presets[preset] = value
-                    keys_to_remove.append(key)
-            for key in keys_to_remove:
-                user_input.pop(key)
-            user_input[CONF_HEATING_PRESETS] = heating_presets
-            user_input[CONF_COOLING_PRESETS] = cooling_presets
+            # Parse the raw strings into dictionaries.
+            heating_raw = user_input.get("heating_presets", "")
+            cooling_raw = user_input.get("cooling_presets", "")
+            user_input[CONF_HEATING_PRESETS] = parse_presets(heating_raw)
+            user_input[CONF_COOLING_PRESETS] = parse_presets(cooling_raw)
+            # Remove the raw string keys.
+            user_input.pop("heating_presets", None)
+            user_input.pop("cooling_presets", None)
             return self.async_create_entry(data=user_input)
 
-        # Build base schema using simple types.
         base_schema = {
             vol.Optional(
                 CONF_MAIN_CLIMATE,
@@ -90,21 +101,19 @@ class SmartClimateOptionsFlow(config_entries.OptionsFlow):
                 CONF_SECONDARY_OFFSET,
                 default=self.config_entry.data.get(CONF_SECONDARY_OFFSET, DEFAULT_SECONDARY_OFFSET)
             ): vol.Coerce(float),
+            # Provide raw string inputs for the presets.
+            vol.Optional(
+                CONF_HEATING_PRESETS,
+                default=dict_to_raw_str(self.config_entry.data.get(CONF_HEATING_PRESETS, DEFAULT_HEATING_PRESETS))
+            ): str,
+            vol.Optional(
+                CONF_COOLING_PRESETS,
+                default=dict_to_raw_str(self.config_entry.data.get(CONF_COOLING_PRESETS, DEFAULT_COOLING_PRESETS))
+            ): str,
         }
 
-        # Add dynamic fields for heating presets.
-        current_heating_presets = self.config_entry.data.get(CONF_HEATING_PRESETS, DEFAULT_HEATING_PRESETS)
-        for preset, default_temp in current_heating_presets.items():
-            key = f"heating_{preset}"
-            base_schema[key] = vol.Optional(key, default=default_temp)
-
-        # Add dynamic fields for cooling presets.
-        current_cooling_presets = self.config_entry.data.get(CONF_COOLING_PRESETS, DEFAULT_COOLING_PRESETS)
-        for preset, default_temp in current_cooling_presets.items():
-            key = f"cooling_{preset}"
-            base_schema[key] = vol.Optional(key, default=default_temp)
-
         options_schema = vol.Schema(base_schema)
-        # Merge suggested values from entry.options, if any.
-        merged_schema = self.add_suggested_values_to_schema(options_schema, self.config_entry.options)
+        merged_schema = self.add_suggested_values_to_schema(
+            options_schema, self.config_entry.options
+        )
         return self.async_show_form(step_id="init", data_schema=merged_schema)

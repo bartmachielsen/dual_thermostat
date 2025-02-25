@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import timedelta
 
@@ -27,6 +28,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=DEFAULT_OUTDOOR_HOT_THRESHOLD): vol.Coerce(float),
     vol.Optional(CONF_PRIMARY_OFFSET, default=DEFAULT_PRIMARY_OFFSET): vol.Coerce(float),
     vol.Optional(CONF_SECONDARY_OFFSET, default=DEFAULT_SECONDARY_OFFSET): vol.Coerce(float),
+    vol.Optional(CONF_HEATING_PRESETS, default=DEFAULT_HEATING_PRESETS): str,
+    vol.Optional(CONF_COOLING_PRESETS, default=DEFAULT_COOLING_PRESETS): str,
+
 })
 
 
@@ -50,6 +54,12 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     outdoor_hot_threshold = config.get(CONF_OUTDOOR_HOT_THRESHOLD)
     primary_offset = config.get(CONF_PRIMARY_OFFSET, DEFAULT_PRIMARY_OFFSET)
     secondary_offset = config.get(CONF_SECONDARY_OFFSET, DEFAULT_SECONDARY_OFFSET)
+
+    if isinstance(heating_presets, str):
+        heating_presets = json.loads(heating_presets)
+
+    if isinstance(cooling_presets, str):
+        cooling_presets = json.loads(cooling_presets)
 
     async_add_entities([
         SmartClimate(
