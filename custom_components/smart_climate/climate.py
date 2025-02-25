@@ -209,6 +209,7 @@ class SmartClimate(ClimateEntity, RestoreEntity):
                     self._attr_target_temperature = heating_target
                 else:
                     self._attr_target_temperature = cooling_target
+
         elif preset_mode in self._heating_presets:
             self._attr_target_temperature = self._heating_presets[preset_mode]
         elif preset_mode in self._cooling_presets:
@@ -249,6 +250,8 @@ class SmartClimate(ClimateEntity, RestoreEntity):
 
         elif self._attr_current_temperature > self._attr_target_temperature + self._primary_threshold:
             diff = self._attr_current_temperature - self._attr_target_temperature
+            effective_mode = HVACMode.OFF
+
             if self._outdoor_sensor:
                 outdoor_state = self.hass.states.get(self._outdoor_sensor)
                 if outdoor_state is not None and outdoor_state.state not in ["unknown", "unavailable"]:
@@ -268,14 +271,14 @@ class SmartClimate(ClimateEntity, RestoreEntity):
                         "Cooling suppressed: outdoor temperature (%s) below threshold (%s)",
                         outdoor_temp, self._outdoor_hot_threshold
                     )
-                    effective_mode = HVACMode.OFF
         else:
             effective_mode = HVACMode.OFF
             diff = 0
 
         _LOGGER.debug(
-            "Current temp: %s, Target temp: %s, Diff: %s, Effective mode: %s",
-            self._attr_current_temperature, self._attr_target_temperature, diff, effective_mode
+            "Current temp: %s, Target temp: %s, Diff: %s, Effective mode: %s, Primary Threshold: %s, Secondary Threshold: %s",
+            self._attr_current_temperature, self._attr_target_temperature,
+            diff, effective_mode, self._primary_threshold, self._secondary_threshold
         )
 
         # Signal main climate device only if a change is required.
