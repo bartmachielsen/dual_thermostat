@@ -15,19 +15,12 @@ from .const import (
     CONF_TEMP_THRESHOLD_PRIMARY,
     CONF_TEMP_THRESHOLD_SECONDARY,
     CONF_OUTDOOR_HOT_THRESHOLD,
+    DEFAULT_TEMP_THRESHOLD_PRIMARY,
+    DEFAULT_TEMP_THRESHOLD_SECONDARY,
+    DEFAULT_OUTDOOR_HOT_THRESHOLD
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-DATA_SCHEMA = vol.Schema({
-    vol.Required(CONF_MAIN_CLIMATE): selector({"entity": {"domain": "climate"}}),
-    vol.Optional(CONF_SECONDARY_CLIMATE): selector({"entity": {"domain": "climate"}}),
-    vol.Required(CONF_SENSOR): selector({"entity": {"domain": ["sensor"]}}),
-    vol.Optional(CONF_OUTDOOR_SENSOR): selector({"entity": {"domain": ["sensor"]}}),
-    vol.Optional(CONF_TEMP_THRESHOLD_PRIMARY, default=1): vol.Coerce(float),
-    vol.Optional(CONF_TEMP_THRESHOLD_SECONDARY, default=3): vol.Coerce(float),
-    vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=25.0): vol.Coerce(float),
-})
 
 
 class SmartClimateOptionsFlow(config_entries.OptionsFlow):
@@ -37,11 +30,24 @@ class SmartClimateOptionsFlow(config_entries.OptionsFlow):
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input: Optional[dict] = None):
-        """Manage the options flow."""
         if user_input is not None:
             return self.async_create_entry(data=user_input)
 
-        return self.async_show_form(step_id="init", data_schema=DATA_SCHEMA)
+        # Fetch the current options
+        current_options = self.config_entry.options
+
+        # Build a dynamic schema using the current values as defaults.
+        data_schema = vol.Schema({
+            vol.Required(CONF_MAIN_CLIMATE, default=current_options.get(CONF_MAIN_CLIMATE)): selector({"entity": {"domain": "climate"}}),
+            vol.Optional(CONF_SECONDARY_CLIMATE, default=current_options.get(CONF_SECONDARY_CLIMATE)): selector({"entity": {"domain": "climate"}}),
+            vol.Required(CONF_SENSOR, default=current_options.get(CONF_SENSOR)): selector({"entity": {"domain": ["sensor"]}}),
+            vol.Optional(CONF_OUTDOOR_SENSOR, default=current_options.get(CONF_OUTDOOR_SENSOR)): selector({"entity": {"domain": ["sensor"]}}),
+            vol.Optional(CONF_TEMP_THRESHOLD_PRIMARY, default=current_options.get(CONF_TEMP_THRESHOLD_PRIMARY, DEFAULT_TEMP_THRESHOLD_PRIMARY)): vol.Coerce(float),
+            vol.Optional(CONF_TEMP_THRESHOLD_SECONDARY, default=current_options.get(CONF_TEMP_THRESHOLD_SECONDARY, DEFAULT_TEMP_THRESHOLD_SECONDARY)): vol.Coerce(float),
+            vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=current_options.get(CONF_OUTDOOR_HOT_THRESHOLD, DEFAULT_OUTDOOR_HOT_THRESHOLD)): vol.Coerce(float),
+        })
+
+        return self.async_show_form(step_id="init", data_schema=data_schema)
 
 
 class SmartClimateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -53,9 +59,19 @@ class SmartClimateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             return self.async_create_entry(title="Smart Climate", data=user_input)
+
+        data_schema = vol.Schema({
+            vol.Required(CONF_MAIN_CLIMATE): selector({"entity": {"domain": "climate"}}),
+            vol.Optional(CONF_SECONDARY_CLIMATE): selector({"entity": {"domain": "climate"}}),
+            vol.Required(CONF_SENSOR): selector({"entity": {"domain": ["sensor"]}}),
+            vol.Optional(CONF_OUTDOOR_SENSOR): selector({"entity": {"domain": ["sensor"]}}),
+            vol.Optional(CONF_TEMP_THRESHOLD_PRIMARY, default=DEFAULT_TEMP_THRESHOLD_PRIMARY): vol.Coerce(float),
+            vol.Optional(CONF_TEMP_THRESHOLD_SECONDARY, default=DEFAULT_TEMP_THRESHOLD_SECONDARY): vol.Coerce(float),
+            vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=DEFAULT_OUTDOOR_HOT_THRESHOLD): vol.Coerce(float),
+        })
         return self.async_show_form(
             step_id="user",
-            data_schema=DATA_SCHEMA,
+            data_schema=data_schema,
             errors=errors,
         )
 

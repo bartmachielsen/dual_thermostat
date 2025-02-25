@@ -15,8 +15,7 @@ async def async_setup_entry(hass, entry):
     hass.data[DOMAIN][entry.entry_id] = {}
 
     result = await hass.config_entries.async_forward_entry_setups(entry, ["climate"])
-    return result
-
+    return True
 
 
 async def async_unload_entry(hass, entry):
