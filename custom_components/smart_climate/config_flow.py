@@ -5,6 +5,7 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant import config_entries
 from homeassistant.helpers.selector import selector
 from .const import *
+from .options_flow import SmartClimateOptionsFlow # noqa
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,52 +41,7 @@ class SmartClimateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_user(user_input)
 
 
-class SmartClimateOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Smart Climate."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        """Manage the options."""
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-
-        options_schema = vol.Schema({
-            vol.Optional(
-                CONF_MAIN_CLIMATE,
-                default=self.config_entry.data.get(CONF_MAIN_CLIMATE)
-            ): selector({"entity": {"domain": "climate"}}),
-            vol.Optional(
-                CONF_SECONDARY_CLIMATE,
-                default=self.config_entry.data.get(CONF_SECONDARY_CLIMATE)
-            ): selector({"entity": {"domain": "climate"}}),
-            vol.Optional(
-                CONF_SENSOR,
-                default=self.config_entry.data.get(CONF_SENSOR)
-            ): selector({"entity": {"domain": ["sensor"]}}),
-            vol.Optional(
-                CONF_OUTDOOR_SENSOR,
-                default=self.config_entry.data.get(CONF_OUTDOOR_SENSOR, "")
-            ): selector({"entity": {"domain": ["sensor"]}}),
-            vol.Optional(
-                CONF_TEMP_THRESHOLD_PRIMARY,
-                default=self.config_entry.data.get(CONF_TEMP_THRESHOLD_PRIMARY)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_TEMP_THRESHOLD_SECONDARY,
-                default=self.config_entry.data.get(CONF_TEMP_THRESHOLD_SECONDARY)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_OUTDOOR_HOT_THRESHOLD,
-                default=self.config_entry.data.get(CONF_OUTDOOR_HOT_THRESHOLD, 25.0)
-            ): vol.Coerce(float),
-        })
-
-        return self.async_show_form(step_id="init", data_schema=options_schema)
-
-
 async def async_get_options_flow(config_entry):
     """Get the options flow for Smart Climate."""
     return SmartClimateOptionsFlow(config_entry)
+

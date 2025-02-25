@@ -109,8 +109,3 @@ class SmartClimateOptionsFlow(config_entries.OptionsFlow):
 
         options_schema = vol.Schema(base_schema)
         return self.async_show_form(step_id="init", data_schema=options_schema)
-
-
-async def async_get_options_flow(config_entry):
-    """Get the options flow for Smart Climate."""
-    return SmartClimateOptionsFlow(config_entry)
