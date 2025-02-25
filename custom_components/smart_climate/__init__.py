@@ -1,10 +1,12 @@
 """Initialize the Dual Thermostat integration."""
-DOMAIN = "dual_thermostat"
+from const import DOMAIN
+
 
 async def async_setup(hass, config):
     """Set up the Dual Thermostat component."""
     # Global setup (if needed)
     return True
+
 
 async def async_setup_entry(hass, entry):
     """Set up Dual Thermostat from a config entry."""
@@ -15,6 +17,7 @@ async def async_setup_entry(hass, entry):
     # Instead of creating a background task, await the forward setup.
     result = await hass.config_entries.async_forward_entry_setup(entry, "climate")
     return result
+
 
 async def async_unload_entry(hass, entry):
     """Unload a config entry."""
