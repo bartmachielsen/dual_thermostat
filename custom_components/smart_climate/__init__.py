@@ -1,6 +1,6 @@
 """Initialize the Dual Thermostat integration."""
-from const import DOMAIN
 
+DOMAIN = "smart_climate"
 
 async def async_setup(hass, config):
     """Set up the Dual Thermostat component."""
