@@ -24,7 +24,7 @@ from .const import (
 )
 
 
-class SmartClimateOptionsFlow(config_entries.OptionsFlow):
+class SmartClimateOptionsFlow(config_entries.OptionsFlow, domain=DOMAIN):
     """Handle an options flow for the Smart Climate integration with per-preset key/value configuration."""
 
     def __init__(self, config_entry):
