@@ -4,20 +4,19 @@ DOMAIN = "smart_climate"
 
 
 async def async_setup(hass, config):
-    """Set up the Dual Thermostat component."""
+    """Set up the Smart Thermostat component."""
     # Global setup (if needed)
     return True
 
 
 async def async_setup_entry(hass, entry):
-    """Set up Dual Thermostat from a config entry."""
-    # Store the config entry so we can reference it later.
+    """Set up Smart Climate from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {}
 
-    # Instead of creating a background task, await the forward setup.
-    result = await hass.config_entries.async_forward_entry_setup(entry, "climate")
+    result = await hass.config_entries.async_forward_entry_setups(entry, ["climate"])
     return result
+
 
 
 async def async_unload_entry(hass, entry):
