@@ -4,23 +4,9 @@ import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from homeassistant import config_entries
 from homeassistant.helpers.selector import selector
-
-DOMAIN = "smart_climate"
+from .const import *
 
 _LOGGER = logging.getLogger(__name__)
-
-# Configuration keys.
-CONF_MAIN_CLIMATE = "main_climate"
-CONF_SECONDARY_CLIMATE = "secondary_climate"
-CONF_SENSOR = "sensor"
-CONF_OUTDOOR_SENSOR = "outdoor_sensor"
-CONF_TEMP_THRESHOLD_PRIMARY = "temp_threshold_primary"
-CONF_TEMP_THRESHOLD_SECONDARY = "temp_threshold_secondary"
-
-CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"
-CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"
-CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"
-CONF_MIN_RUNTIME = "min_runtime_seconds"
 
 # Schema for initial config flow.
 DATA_SCHEMA = vol.Schema({
@@ -31,9 +17,6 @@ DATA_SCHEMA = vol.Schema({
     vol.Optional(CONF_TEMP_THRESHOLD_PRIMARY, default=1): vol.Coerce(float),
     vol.Optional(CONF_TEMP_THRESHOLD_SECONDARY, default=3): vol.Coerce(float),
     vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=25.0): vol.Coerce(float),
-    vol.Optional(CONF_OUTDOOR_COLD_THRESHOLD, default=10.0): vol.Coerce(float),
-    vol.Optional(CONF_MODE_SYNC_TEMPLATE, default=""): str,
-    vol.Optional(CONF_MIN_RUNTIME, default=300): vol.Coerce(int),
 })
 
 
@@ -98,18 +81,6 @@ class SmartClimateOptionsFlow(config_entries.OptionsFlow):
                 CONF_OUTDOOR_HOT_THRESHOLD,
                 default=self.config_entry.data.get(CONF_OUTDOOR_HOT_THRESHOLD, 25.0)
             ): vol.Coerce(float),
-            vol.Optional(
-                CONF_OUTDOOR_COLD_THRESHOLD,
-                default=self.config_entry.data.get(CONF_OUTDOOR_COLD_THRESHOLD, 10.0)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_MODE_SYNC_TEMPLATE,
-                default=self.config_entry.data.get(CONF_MODE_SYNC_TEMPLATE, "")
-            ): str,
-            vol.Optional(
-                CONF_MIN_RUNTIME,
-                default=self.config_entry.data.get(CONF_MIN_RUNTIME, 300)
-            ): vol.Coerce(int),
         })
 
         return self.async_show_form(step_id="init", data_schema=options_schema)

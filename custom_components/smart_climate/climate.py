@@ -12,62 +12,9 @@ from homeassistant.helpers.template import Template
 from homeassistant.util.dt import now
 from homeassistant.helpers.event import async_track_time_interval  # <-- Import periodic tracker
 from homeassistant.helpers.restore_state import RestoreEntity  # <-- Import restore state
+from .const import *
 
 _LOGGER = logging.getLogger(__name__)
-
-DOMAIN = "smart_climate"  # Renamed from dual_thermostat
-
-# Configuration keys for the main and secondary climate devices.
-CONF_MAIN_CLIMATE = "main_climate"
-CONF_SECONDARY_CLIMATE = "secondary_climate"
-
-# Configuration keys for sensors.
-CONF_SENSOR = "sensor"  # Primary indoor sensor.
-CONF_OUTDOOR_SENSOR = "outdoor_sensor"  # (Optional) Outdoor sensor.
-CONF_MIN_RUNTIME = "min_runtime_seconds"  # Minimum runtime before turning off
-
-# Configuration keys for controlling behavior.
-# (Now using separate thresholds for primary and secondary devices)
-CONF_TEMP_THRESHOLD_PRIMARY = "temp_threshold_primary"
-CONF_TEMP_THRESHOLD_SECONDARY = "temp_threshold_secondary"
-CONF_MODE_SYNC_TEMPLATE = "mode_sync_template"  # Template to force both devices to run in the same mode.
-CONF_OUTDOOR_HOT_THRESHOLD = "outdoor_hot_threshold"  # e.g. 25°C or higher.
-CONF_OUTDOOR_COLD_THRESHOLD = "outdoor_cold_threshold"  # e.g. 10°C or lower.
-
-# New configuration keys for temperature offsets.
-CONF_PRIMARY_OFFSET = "primary_offset"
-CONF_SECONDARY_OFFSET = "secondary_offset"
-
-# Default values.
-DEFAULT_TEMP_THRESHOLD_PRIMARY = 1.0
-DEFAULT_TEMP_THRESHOLD_SECONDARY = 2.0
-DEFAULT_HEATING_PRESETS = {
-    "none": None,
-    "eco": 15,
-    "away": 15,
-    "sleep": 15,
-    "comfort": 20,
-    "boost": 24,
-    "home": 18,
-    "activity": 18
-}
-DEFAULT_COOLING_PRESETS = {
-    "none": None,
-    "eco": None,
-    "away": None,
-    "sleep": 30,
-    "comfort": 24,
-    "boost": 22,
-    "home": 26,
-    "activity": 26
-}
-DEFAULT_OUTDOOR_HOT_THRESHOLD = DEFAULT_COOLING_PRESETS["comfort"]
-DEFAULT_OUTDOOR_COLD_THRESHOLD = DEFAULT_HEATING_PRESETS["comfort"]
-DEFAULT_MIN_RUNTIME = 300  # 5 minutes
-
-# Default offsets.
-DEFAULT_PRIMARY_OFFSET = 1.0
-DEFAULT_SECONDARY_OFFSET = 0.0
 
 # Extend the platform schema with our custom configuration.
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
@@ -77,10 +24,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_OUTDOOR_SENSOR): cv.string,
     vol.Optional(CONF_TEMP_THRESHOLD_PRIMARY, default=DEFAULT_TEMP_THRESHOLD_PRIMARY): vol.Coerce(float),
     vol.Optional(CONF_TEMP_THRESHOLD_SECONDARY, default=DEFAULT_TEMP_THRESHOLD_SECONDARY): vol.Coerce(float),
-    vol.Optional(CONF_MODE_SYNC_TEMPLATE): cv.template,
     vol.Optional(CONF_OUTDOOR_HOT_THRESHOLD, default=DEFAULT_OUTDOOR_HOT_THRESHOLD): vol.Coerce(float),
-    vol.Optional(CONF_OUTDOOR_COLD_THRESHOLD, default=DEFAULT_OUTDOOR_COLD_THRESHOLD): vol.Coerce(float),
-    vol.Optional(CONF_MIN_RUNTIME, default=DEFAULT_MIN_RUNTIME): vol.Coerce(int),
     vol.Optional(CONF_PRIMARY_OFFSET, default=DEFAULT_PRIMARY_OFFSET): vol.Coerce(float),
     vol.Optional(CONF_SECONDARY_OFFSET, default=DEFAULT_SECONDARY_OFFSET): vol.Coerce(float),
 })
@@ -101,17 +45,11 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     outdoor_sensor = config.get(CONF_OUTDOOR_SENSOR)
     primary_threshold = config.get(CONF_TEMP_THRESHOLD_PRIMARY)
     secondary_threshold = config.get(CONF_TEMP_THRESHOLD_SECONDARY)
-    heating_presets = DEFAULT_HEATING_PRESETS
-    cooling_presets = DEFAULT_COOLING_PRESETS
+    heating_presets = config.get(CONF_HEATING_PRESETS, DEFAULT_HEATING_PRESETS)
+    cooling_presets = config.get(CONF_COOLING_PRESETS, DEFAULT_COOLING_PRESETS)
     outdoor_hot_threshold = config.get(CONF_OUTDOOR_HOT_THRESHOLD)
-    outdoor_cold_threshold = config.get(CONF_OUTDOOR_COLD_THRESHOLD)
-    min_runtime = config.get(CONF_MIN_RUNTIME, DEFAULT_MIN_RUNTIME)
     primary_offset = config.get(CONF_PRIMARY_OFFSET, DEFAULT_PRIMARY_OFFSET)
     secondary_offset = config.get(CONF_SECONDARY_OFFSET, DEFAULT_SECONDARY_OFFSET)
-
-    mode_sync_template = config.get(CONF_MODE_SYNC_TEMPLATE)
-    if mode_sync_template:
-        mode_sync_template = Template(mode_sync_template, hass)
 
     async_add_entities([
         SmartClimate(
@@ -124,10 +62,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
             secondary_threshold,
             heating_presets,
             cooling_presets,
-            mode_sync_template,
             outdoor_hot_threshold,
-            outdoor_cold_threshold,
-            min_runtime,
             primary_offset,
             secondary_offset,
         )
@@ -142,7 +77,7 @@ class SmartClimate(ClimateEntity, RestoreEntity):
 
     def __init__(self, hass, main_climate, secondary_climate, sensor, outdoor_sensor,
                  primary_threshold, secondary_threshold, heating_presets, cooling_presets,
-                 mode_sync_template, outdoor_hot_threshold, outdoor_cold_threshold, min_runtime,
+                 outdoor_hot_threshold,
                  primary_offset, secondary_offset):
         self.hass = hass
         self._main_climate = main_climate
@@ -153,11 +88,8 @@ class SmartClimate(ClimateEntity, RestoreEntity):
         self._secondary_threshold = secondary_threshold
         self._heating_presets = heating_presets
         self._cooling_presets = cooling_presets
-        self._mode_sync_template = mode_sync_template
         self._outdoor_hot_threshold = outdoor_hot_threshold
-        self._outdoor_cold_threshold = outdoor_cold_threshold
-        self._min_runtime = timedelta(seconds=min_runtime)
-        self._last_switch_time = now() - self._min_runtime  # Allow immediate first switch
+        self._last_switch_time = now()
 
         # Track last commands sent to avoid redundant service calls.
         self._last_main_mode = HVACMode.OFF
@@ -217,17 +149,6 @@ class SmartClimate(ClimateEntity, RestoreEntity):
             "preset_mode": self._attr_preset_mode,
         }
 
-    def _evaluate_mode_sync(self):
-        """Evaluate the mode_sync template if provided."""
-        if self._mode_sync_template is not None:
-            try:
-                result = self._mode_sync_template.async_render(parse_result=False)
-                if result in ["heat", "cool"]:
-                    return result
-            except Exception as e:
-                _LOGGER.error("Error evaluating mode_sync_template: %s", e)
-        return None
-
     @property
     def effective_main_device(self):
         """Return the entity_id of the primary climate device."""
@@ -250,8 +171,6 @@ class SmartClimate(ClimateEntity, RestoreEntity):
 
     async def async_set_preset_mode(self, preset_mode):
         """Set a new preset mode and update the target temperature accordingly.
-
-        When switching presets, the min_runtime requirement is skipped.
         """
         if preset_mode not in self._heating_presets and preset_mode not in self._cooling_presets:
             _LOGGER.error("Preset mode %s not recognized", preset_mode)
