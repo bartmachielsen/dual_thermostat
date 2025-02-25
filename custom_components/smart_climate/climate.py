@@ -246,6 +246,7 @@ class SmartClimate(ClimateEntity, RestoreEntity):
         if self._attr_current_temperature < self._attr_target_temperature - self._primary_threshold:
             effective_mode = HVACMode.HEAT
             diff = self._attr_target_temperature - self._attr_current_temperature
+
         elif self._attr_current_temperature > self._attr_target_temperature + self._primary_threshold:
             diff = self._attr_current_temperature - self._attr_target_temperature
             if self._outdoor_sensor:
@@ -268,8 +269,6 @@ class SmartClimate(ClimateEntity, RestoreEntity):
                         outdoor_temp, self._outdoor_hot_threshold
                     )
                     effective_mode = HVACMode.OFF
-            else:
-                effective_mode = HVACMode.COOL
         else:
             effective_mode = HVACMode.OFF
             diff = 0

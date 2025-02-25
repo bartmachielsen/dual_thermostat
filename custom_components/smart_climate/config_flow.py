@@ -1,4 +1,6 @@
 import logging
+from typing import Optional
+
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from homeassistant import config_entries
@@ -14,7 +16,6 @@ from .const import (
     CONF_TEMP_THRESHOLD_SECONDARY,
     CONF_OUTDOOR_HOT_THRESHOLD,
 )
-from .options_flow import SmartClimateOptionsFlow  # noqa
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,12 +30,26 @@ DATA_SCHEMA = vol.Schema({
 })
 
 
+class SmartClimateOptionsFlow(config_entries.OptionsFlow):
+    """Handle a simplified options flow for the Smart Climate integration."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input: Optional[dict] = None):
+        """Manage the options flow."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        return self.async_show_form(step_id="init", data_schema=DATA_SCHEMA)
+
+
 class SmartClimateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for the Smart Climate integration."""
 
     VERSION = 1
 
-    async def async_step_user(self, user_input: dict | None = None):
+    async def async_step_user(self, user_input: Optional[dict] = None):
         errors = {}
         if user_input is not None:
             return self.async_create_entry(title="Smart Climate", data=user_input)
