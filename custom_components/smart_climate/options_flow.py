@@ -111,9 +111,4 @@ class SmartClimateOptionsFlow(config_entries.OptionsFlow):
                 default=dict_to_raw_str(self.config_entry.data.get(CONF_COOLING_PRESETS, DEFAULT_COOLING_PRESETS))
             ): str,
         }
-
-        options_schema = vol.Schema(base_schema)
-        merged_schema = self.add_suggested_values_to_schema(
-            options_schema, self.config_entry.options
-        )
-        return self.async_show_form(step_id="init", data_schema=merged_schema)
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(base_schema))
